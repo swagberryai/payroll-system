@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Store, Landmark, Briefcase, Building2, UserPlus, Lock, Unlock,
-  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck
+  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
-const ATTEND_TYPES = ["정상출근", "연차", "반차", "지각", "조퇴", "출장(외근)"];
+const ATTEND_TYPES = ["정상출근", "휴무", "결근", "연차", "반차", "지각", "조퇴", "출장(외근)"];
 
 // 담당 부서별 서류 정의
 const ACCOUNTING_DOCS = [
@@ -360,34 +360,212 @@ export default function PayrollFlowPrototype() {
     return currentStoreEmployees.filter((e) => e.accountingConfirmed && e.hrConfirmed);
   }, [currentStoreEmployees]);
 
-  // 근태입력 폼
-  const [attForm, setAttForm] = useState({
-    employeeId: "", date: "", mode: "start-end", start: "", end: "", hours: "", type: "정상출근",
-  });
+  // ---------------- 🗓️ 매장 근태 입력 엑셀형/그리드형 상태 관리 ----------------
+  const todayStr = useMemo(() => getKstDateString(new Date()) || "2026-08-13", []);
+  const [attGlobalDate, setAttGlobalDate] = useState(todayStr);
+  const [attTimeMode, setAttTimeMode] = useState("start-end"); // "start-end" | "start-hours" | "start-only"
+  const [attTargetTab, setAttTargetTab] = useState("fulltime"); // "fulltime" | "parttime" | "daily"
+  
+  // 아르바이트 & 일용직 선택 체크박스 상태
+  const [selectedParttimeIds, setSelectedParttimeIds] = useState(new Set());
+  const [selectedDailyIds, setSelectedDailyIds] = useState(new Set());
 
-  const computeHours = (f) => {
-    if (f.mode === "start-only") return 10;
-    if (f.mode === "start-hours") return Number(f.hours) || 0;
-    if (f.mode === "start-end" && f.start && f.end) {
-      const [sh, sm] = f.start.split(":").map(Number);
-      const [eh, em] = f.end.split(":").map(Number);
-      const diff = (eh * 60 + em - (sh * 60 + sm)) / 60;
-      return diff > 0 ? Math.round(diff * 10) / 10 : 0;
+  // 우측 작업창에 불러와진 행(Row) 목록
+  const [loadedRows, setLoadedRows] = useState([]);
+
+  // 매장별 사원 고용형태 분류 (가나다순 정렬)
+  const fulltimeEmps = useMemo(() => {
+    return currentStoreEmployees
+      .filter((e) => e.employmentType === "정직원")
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [currentStoreEmployees]);
+
+  const parttimeEmps = useMemo(() => {
+    return currentStoreEmployees
+      .filter((e) => e.employmentType === "아르바이트")
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [currentStoreEmployees]);
+
+  const dailyEmps = useMemo(() => {
+    return currentStoreEmployees
+      .filter((e) => e.employmentType === "일용직")
+      .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [currentStoreEmployees]);
+
+  // 1. 정직원 전체 우측 작업창으로 가져오기
+  const importAllFulltime = () => {
+    if (fulltimeEmps.length === 0) {
+      flash("가져올 정직원이 없습니다. 사원등록을 확인하세요.", "error");
+      return;
     }
-    return 0;
+    const newRows = [...loadedRows];
+    let count = 0;
+    fulltimeEmps.forEach((emp) => {
+      const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+      if (!exists) {
+        newRows.push({
+          rowId: `ft_${emp.id}_${Date.now()}_${Math.random()}`,
+          empId: emp.id,
+          name: emp.name,
+          employmentType: "정직원",
+          deptPosition: [emp.dept, emp.position].filter(Boolean).join(" · ") || "정직원",
+          date: attGlobalDate,
+          type: "정상출근",
+          mode: attTimeMode,
+          start: "09:00",
+          end: "18:00",
+          hours: 8,
+          breakMinutes: 0,
+        });
+        count++;
+      }
+    });
+    setLoadedRows(newRows);
+    flash(`정직원 ${count}명을 우측 작업창으로 가져왔습니다!`);
   };
 
-  const submitAttendance = async () => {
-    if (!attForm.employeeId || !attForm.date) {
-      flash("직원과 날짜를 선택하세요.", "error");
+  // 2. 선택한 아르바이트 우측 작업창으로 가져오기
+  const importSelectedParttime = () => {
+    if (selectedParttimeIds.size === 0) {
+      flash("가져올 아르바이트생을 체크 선택하세요.", "error");
+      return;
+    }
+    const newRows = [...loadedRows];
+    let count = 0;
+    parttimeEmps.forEach((emp) => {
+      if (selectedParttimeIds.has(emp.id)) {
+        const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+        if (!exists) {
+          newRows.push({
+            rowId: `pt_${emp.id}_${Date.now()}_${Math.random()}`,
+            empId: emp.id,
+            name: emp.name,
+            employmentType: "아르바이트",
+            deptPosition: "아르바이트",
+            date: attGlobalDate,
+            type: "정상출근",
+            mode: attTimeMode,
+            start: "09:00",
+            end: "18:00",
+            hours: 8,
+            breakMinutes: 60, // 기본 휴게 60분
+          });
+          count++;
+        }
+      }
+    });
+    setLoadedRows(newRows);
+    setSelectedParttimeIds(new Set());
+    flash(`아르바이트생 ${count}명을 우측 작업창으로 가져왔습니다!`);
+  };
+
+  // 3. 선택한 일용직 우측 작업창으로 가져오기
+  const importSelectedDaily = () => {
+    if (selectedDailyIds.size === 0) {
+      flash("가져올 일용직 인원을 체크 선택하세요.", "error");
+      return;
+    }
+    const newRows = [...loadedRows];
+    let count = 0;
+    dailyEmps.forEach((emp) => {
+      if (selectedDailyIds.has(emp.id)) {
+        const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+        if (!exists) {
+          newRows.push({
+            rowId: `dy_${emp.id}_${Date.now()}_${Math.random()}`,
+            empId: emp.id,
+            name: emp.name,
+            employmentType: "일용직",
+            deptPosition: "일용직",
+            date: attGlobalDate,
+            type: "정상출근",
+            mode: attTimeMode,
+            start: "09:00",
+            end: "18:00",
+            hours: 8,
+            breakMinutes: 0,
+          });
+          count++;
+        }
+      }
+    });
+    setLoadedRows(newRows);
+    setSelectedDailyIds(new Set());
+    flash(`일용직 ${count}명을 우측 작업창으로 가져왔습니다!`);
+  };
+
+  // 로드된 행 제거 (X 버튼)
+  const removeLoadedRow = (rowId) => {
+    setLoadedRows((prev) => prev.filter((r) => r.rowId !== rowId));
+  };
+
+  // 로드된 행 데이터 개별 변경
+  const updateRow = (rowId, key, val) => {
+    setLoadedRows((prev) =>
+      prev.map((r) => (r.rowId === rowId ? { ...r, [key]: val } : r))
+    );
+  };
+
+  // 전역 날짜 변경 시 로드된 행 날짜도 일괄 변경
+  const handleGlobalDateChange = (newDate) => {
+    setAttGlobalDate(newDate);
+    setLoadedRows((prev) => prev.map((r) => ({ ...r, date: newDate })));
+  };
+
+  // 전역 근무시간 입력방식 변경 시 로드된 행 입력방식 일괄 변경
+  const handleGlobalTimeModeChange = (newMode) => {
+    setAttTimeMode(newMode);
+    setLoadedRows((prev) => prev.map((r) => ({ ...r, mode: newMode })));
+  };
+
+  // 행의 실제 계산된 수당 인정 근로시간 계산
+  const computeRowHours = (row) => {
+    let rawHours = 0;
+    if (row.mode === "start-only") {
+      rawHours = 10;
+    } else if (row.mode === "start-hours") {
+      rawHours = Number(row.hours) || 0;
+    } else if (row.mode === "start-end" && row.start && row.end) {
+      const [sh, sm] = row.start.split(":").map(Number);
+      const [eh, em] = row.end.split(":").map(Number);
+      const diff = (eh * 60 + em - (sh * 60 + sm)) / 60;
+      rawHours = diff > 0 ? Math.round(diff * 10) / 10 : 0;
+    }
+
+    // 아르바이트의 경우 휴게시간(분) 차감
+    if (row.employmentType === "아르바이트" && row.breakMinutes) {
+      const breakHours = (Number(row.breakMinutes) || 0) / 60;
+      rawHours = Math.max(0, Math.round((rawHours - breakHours) * 10) / 10);
+    }
+    return rawHours;
+  };
+
+  // 우측 작업창의 전체 인원 근태 일괄 저장 (Firestore)
+  const saveAllLoadedRows = async () => {
+    if (loadedRows.length === 0) {
+      flash("우측 작업창에 저장할 근태 행이 없습니다.", "error");
       return;
     }
     try {
-      await firebaseService.submitAttendance(attForm, currentStoreCode, "store_user");
-      flash("근태 입력 완료 (Firestore 저장)");
-      setAttForm({ ...attForm, start: "", end: "", hours: "" });
+      for (const row of loadedRows) {
+        const totalHrs = computeRowHours(row);
+        const payload = {
+          employeeId: row.empId,
+          date: row.date || attGlobalDate,
+          type: row.type || "정상출근",
+          mode: row.mode,
+          start: row.start || "",
+          end: row.end || "",
+          hours: totalHrs,
+          totalHours: totalHrs,
+          breakMinutes: row.breakMinutes || 0,
+        };
+        await firebaseService.submitAttendance(payload, currentStoreCode, "store_user");
+      }
+      flash(`🎉 총 ${loadedRows.length}명의 근태 기록이 성공적으로 일괄 저장되었습니다!`);
+      setLoadedRows([]);
     } catch (err) {
-      flash(err.message || "근태 저장 실패", "error");
+      flash(err.message || "일괄 저장 중 오류가 발생했습니다.", "error");
     }
   };
 
@@ -991,126 +1169,515 @@ export default function PayrollFlowPrototype() {
               </div>
             )}
 
+            {/* ---------------- 🗓️ 새로 개편된 그리드형 일괄 매장 근태 입력 ---------------- */}
             {storeTab === "attendance" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* 근태 입력 폼 */}
-                <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <h2 className="text-lg font-bold text-slate-900 mb-6 pb-3 border-b border-slate-100">
-                    근태 입력 ({currentStoreCode})
-                  </h2>
-
-                  <div className="space-y-5 text-base">
-                    <Select
-                      label={`직원 선택 * (${currentStoreCode} 승인 확정 사원)`}
-                      value={attForm.employeeId}
-                      options={confirmedEmployees.map((e) => e.name)}
-                      valueMap={confirmedEmployees}
-                      onChange={(v) => {
-                        const emp = confirmedEmployees.find((e) => e.name === v);
-                        setAttForm({ ...attForm, employeeId: emp ? emp.id : "" });
-                      }}
-                      showDefaultOption={confirmedEmployees.length === 0}
-                    />
-                    {confirmedEmployees.length === 0 && (
-                      <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 font-medium space-y-1">
-                        <div>⚠️ <strong>"{currentStoreCode}"</strong>에 승인 확정된 사원이 없습니다.</div>
-                        <p className="text-xs text-amber-700">왼쪽 [사원등록] 탭에서 사원을 등록하고 회계팀+인사팀 승인을 완료하면 표시됩니다.</p>
-                      </div>
-                    )}
-                    <Field label="근무 날짜 *" type="date" value={attForm.date} onChange={(v) => setAttForm({ ...attForm, date: v })} />
-                    <Select label="근태 구분 *" value={attForm.type} options={ATTEND_TYPES} onChange={(v) => setAttForm({ ...attForm, type: v })} />
-
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">근무시간 입력 방식</label>
-                      <div className="flex gap-2 mb-3">
-                        {[
-                          { key: "start-only", label: "시작만 (기본 10h)" },
-                          { key: "start-hours", label: "시작 + 총시간" },
-                          { key: "start-end", label: "시작 + 종료시간" },
-                        ].map((m) => (
-                          <button
-                            key={m.key}
-                            type="button"
-                            onClick={() => setAttForm({ ...attForm, mode: m.key })}
-                            className={`text-sm px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer ${
-                              attForm.mode === m.key
-                                ? "bg-[#EF7D25] text-white border-[#EF7D25] shadow-xs"
-                                : "bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100"
-                            }`}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <Field label="시작시간" type="time" value={attForm.start} onChange={(v) => setAttForm({ ...attForm, start: v })} />
-                        {attForm.mode === "start-hours" && (
-                          <Field label="총 근무시간(시간)" type="number" value={attForm.hours} onChange={(v) => setAttForm({ ...attForm, hours: v })} />
-                        )}
-                        {attForm.mode === "start-end" && (
-                          <Field label="종료시간" type="time" value={attForm.end} onChange={(v) => setAttForm({ ...attForm, end: v })} />
-                        )}
-                      </div>
-                      
-                      <div className="text-sm font-semibold text-slate-700 mt-2 bg-slate-50 px-3.5 py-2.5 rounded-xl border border-slate-200">
-                        자동 계산된 총 근무시간: <span className="text-base font-extrabold text-[#EF7D25] ml-1">{computeHours(attForm)}시간</span>
-                      </div>
+              <div className="space-y-6">
+                {/* 1. 상단 글로벌 컨트롤 바 (근무 날짜 & 근무시간 입력 방식 일괄 전환) */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-[#EF7D25] shrink-0">
+                      <Calendar className="w-5.5 h-5.5" />
                     </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">
+                        전체 근태 대상 날짜 선택
+                      </label>
+                      <input
+                        type="date"
+                        value={attGlobalDate}
+                        onChange={(e) => handleGlobalDateChange(e.target.value)}
+                        className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                      />
+                    </div>
+                  </div>
 
-                    <button
-                      onClick={submitAttendance}
-                      disabled={confirmedEmployees.length === 0}
-                      className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-base font-bold py-3.5 rounded-xl shadow-md disabled:opacity-40 transition-all cursor-pointer"
-                    >
-                      근태 기록 저장 (Firestore)
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-slate-500">근무시간 입력 방식 (일괄 전환):</span>
+                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 gap-1.5">
+                      {[
+                        { key: "start-end", label: "⏱️ 출~퇴근시간 (09:00~18:00)" },
+                        { key: "start-hours", label: "🔢 총 근무시간 (8h)" },
+                        { key: "start-only", label: "✅ 출근 체크 (기본 10h)" },
+                      ].map((m) => (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => handleGlobalTimeModeChange(m.key)}
+                          className={`text-xs px-3 py-2 rounded-lg font-bold transition-all cursor-pointer ${
+                            attTimeMode === m.key
+                              ? "bg-[#EF7D25] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* 해당 매장 알바 주간 누적 근로시간 현황 */}
-                <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <h2 className="text-lg font-bold text-slate-900 mb-6 pb-3 border-b border-slate-100">
-                    "{currentStoreCode}" 알바 주간 누적 근로시간
-                  </h2>
-                  
-                  <div className="space-y-5 mb-8">
-                    {currentStorePartTime15hAlerts.length === 0 && (
-                      <div className="text-sm text-slate-500">"{currentStoreCode}"에 주 15시간 이상 근무 중인 아르바이트 사원이 없습니다.</div>
-                    )}
-                    {currentStorePartTime15hAlerts.map(({ e, hrs }) => {
-                      const pct = Math.min((hrs / 15) * 100, 100);
-                      return (
-                        <div key={e.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                          <div className="flex justify-between items-center text-sm font-bold mb-2">
-                            <span className="text-slate-900 text-base">{e.name}</span>
-                            <span className="text-base text-rose-600 font-extrabold">
-                              {hrs}시간 / 15시간
-                            </span>
+                {/* 2. 좌측 인원 선택 & 우측 행 일괄 작업창 (좌우 분할 레이아웃) */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* 👈 좌측 패널: 상단 탭 3개 (정직원 / 아르바이트 / 일용직) 및 선택 리스트 */}
+                  <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-6 shadow-sm flex flex-col justify-between min-h-[580px]">
+                    <div>
+                      <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                        <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                          <Users className="w-5 h-5 text-[#EF7D25]" />
+                          인원 불러오기
+                        </h2>
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md">
+                          "{currentStoreCode}"
+                        </span>
+                      </div>
+
+                      {/* 탭 3개 버튼 */}
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mb-5">
+                        <button
+                          type="button"
+                          onClick={() => setAttTargetTab("fulltime")}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            attTargetTab === "fulltime"
+                              ? "bg-[#EF7D25] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          👔 정직원 ({fulltimeEmps.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttTargetTab("parttime")}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            attTargetTab === "parttime"
+                              ? "bg-[#EF7D25] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          🐥 아르바이트 ({parttimeEmps.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttTargetTab("daily")}
+                          className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                            attTargetTab === "daily"
+                              ? "bg-[#EF7D25] text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          🏗️ 일용직 ({dailyEmps.length})
+                        </button>
+                      </div>
+
+                      {/* 1. 정직원 탭 내용 (가나다순, 출근 안 해도 휴무/결근 처리 위해 전체 선택 가능) */}
+                      {attTargetTab === "fulltime" && (
+                        <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                          <div className="text-xs text-slate-500 mb-2 font-medium">
+                            💡 정직원은 출근을 하지 않아도 휴무/결근 기입을 위해 전원을 불러옵니다. (가나다순 정렬)
                           </div>
-                          <div className="h-3 rounded-full bg-slate-200 overflow-hidden">
-                            <div
-                              className="h-full bg-rose-500 transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <div className="text-xs font-bold text-rose-600 mt-2 flex flex-wrap items-center gap-2 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
-                            <AlertTriangle className="w-4 h-4 shrink-0" />
-                            <span>주휴수당 지급 대상 및 1년 지속 근무 시 <strong>퇴직급여(퇴직금) 발생 가능 위험군!</strong></span>
-                          </div>
+                          {fulltimeEmps.length === 0 && (
+                            <div className="text-xs text-slate-400 text-center py-10 border border-dashed rounded-xl">
+                              등록된 정직원이 없습니다.
+                            </div>
+                          )}
+                          {fulltimeEmps.map((e) => (
+                            <div key={e.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-sm">
+                              <div>
+                                <span className="font-bold text-slate-900 mr-2">{e.name}</span>
+                                <span className="text-xs font-semibold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">
+                                  {[e.dept, e.position].filter(Boolean).join(" · ") || "정직원"}
+                                </span>
+                              </div>
+                              <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                👔 정직원
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {/* 2. 아르바이트 탭 내용 (체크박스 제공) */}
+                      {attTargetTab === "parttime" && (
+                        <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                          <div className="text-xs text-slate-500 mb-2 font-medium flex justify-between items-center">
+                            <span>💡 오늘 출근한 아르바이트생을 체크하세요.</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedParttimeIds.size === parttimeEmps.length) {
+                                  setSelectedParttimeIds(new Set());
+                                } else {
+                                  setSelectedParttimeIds(new Set(parttimeEmps.map((e) => e.id)));
+                                }
+                              }}
+                              className="text-[11px] text-[#EF7D25] underline font-bold cursor-pointer"
+                            >
+                              {selectedParttimeIds.size === parttimeEmps.length ? "전체해제" : "전체선택"}
+                            </button>
+                          </div>
+                          {parttimeEmps.length === 0 && (
+                            <div className="text-xs text-slate-400 text-center py-10 border border-dashed rounded-xl">
+                              등록된 아르바이트생이 없습니다.
+                            </div>
+                          )}
+                          {parttimeEmps.map((e) => {
+                            const isChecked = selectedParttimeIds.has(e.id);
+                            return (
+                              <label
+                                key={e.id}
+                                className={`p-3 border rounded-xl flex items-center justify-between text-sm cursor-pointer select-none transition-all ${
+                                  isChecked
+                                    ? "bg-orange-50/80 border-[#EF7D25] font-bold text-slate-900 shadow-xs"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(ev) => {
+                                      const next = new Set(selectedParttimeIds);
+                                      if (ev.target.checked) next.add(e.id);
+                                      else next.delete(e.id);
+                                      setSelectedParttimeIds(next);
+                                    }}
+                                    className="w-4 h-4 text-[#EF7D25] rounded focus:ring-[#EF7D25] cursor-pointer"
+                                  />
+                                  <span>{e.name}</span>
+                                </div>
+                                <span className="text-xs font-semibold text-slate-500">입사: {e.hireDate}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* 3. 일용직 탭 내용 (체크박스 제공) */}
+                      {attTargetTab === "daily" && (
+                        <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
+                          <div className="text-xs text-slate-500 mb-2 font-medium flex justify-between items-center">
+                            <span>💡 오늘 출근한 일용직을 체크하세요.</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedDailyIds.size === dailyEmps.length) {
+                                  setSelectedDailyIds(new Set());
+                                } else {
+                                  setSelectedDailyIds(new Set(dailyEmps.map((e) => e.id)));
+                                }
+                              }}
+                              className="text-[11px] text-[#EF7D25] underline font-bold cursor-pointer"
+                            >
+                              {selectedDailyIds.size === dailyEmps.length ? "전체해제" : "전체선택"}
+                            </button>
+                          </div>
+                          {dailyEmps.length === 0 && (
+                            <div className="text-xs text-slate-400 text-center py-10 border border-dashed rounded-xl">
+                              등록된 일용직이 없습니다.
+                            </div>
+                          )}
+                          {dailyEmps.map((e) => {
+                            const isChecked = selectedDailyIds.has(e.id);
+                            return (
+                              <label
+                                key={e.id}
+                                className={`p-3 border rounded-xl flex items-center justify-between text-sm cursor-pointer select-none transition-all ${
+                                  isChecked
+                                    ? "bg-orange-50/80 border-[#EF7D25] font-bold text-slate-900 shadow-xs"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(ev) => {
+                                      const next = new Set(selectedDailyIds);
+                                      if (ev.target.checked) next.add(e.id);
+                                      else next.delete(e.id);
+                                      setSelectedDailyIds(next);
+                                    }}
+                                    className="w-4 h-4 text-[#EF7D25] rounded focus:ring-[#EF7D25] cursor-pointer"
+                                  />
+                                  <span>{e.name}</span>
+                                </div>
+                                <span className="text-xs font-semibold text-slate-500">일용직</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 하단 고정 가져오기 버튼 */}
+                    <div className="pt-4 border-t border-slate-100">
+                      {attTargetTab === "fulltime" && (
+                        <button
+                          type="button"
+                          onClick={importAllFulltime}
+                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <ArrowRightCircle className="w-4 h-4" />
+                          정직원 전체 가져오기 ({fulltimeEmps.length}명 ➔ 작업창)
+                        </button>
+                      )}
+                      {attTargetTab === "parttime" && (
+                        <button
+                          type="button"
+                          onClick={importSelectedParttime}
+                          disabled={selectedParttimeIds.size === 0}
+                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md disabled:opacity-40 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <ArrowRightCircle className="w-4 h-4" />
+                          선택한 아르바이트 가져오기 ({selectedParttimeIds.size}명 ➔ 작업창)
+                        </button>
+                      )}
+                      {attTargetTab === "daily" && (
+                        <button
+                          type="button"
+                          onClick={importSelectedDaily}
+                          disabled={selectedDailyIds.size === 0}
+                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md disabled:opacity-40 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          <ArrowRightCircle className="w-4 h-4" />
+                          선택한 일용직 가져오기 ({selectedDailyIds.size}명 ➔ 작업창)
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <h3 className="text-base font-bold text-slate-900 mb-3">"{currentStoreCode}" 최근 근태 기록</h3>
+                  {/* 👉 우측 중앙 작업창: 행(Row) 단위 일괄 입력 그리드 */}
+                  <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm flex flex-col justify-between min-h-[580px]">
+                    <div>
+                      <div className="flex flex-wrap items-center justify-between pb-4 mb-6 border-b border-slate-100 gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <Clock className="w-6 h-6 text-[#EF7D25]" />
+                          <h2 className="text-xl font-black text-slate-900">
+                            근태 일괄 작성 작업창
+                          </h2>
+                          <span className="text-xs bg-orange-100 text-[#EF7D25] font-extrabold px-3 py-1 rounded-full border border-orange-200">
+                            {attGlobalDate} 대상 ({loadedRows.length}명 로드됨)
+                          </span>
+                        </div>
+
+                        {loadedRows.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setLoadedRows([])}
+                            className="text-xs text-rose-600 hover:text-rose-800 font-bold bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg transition-all cursor-pointer"
+                          >
+                            작업창 전체 비우기
+                          </button>
+                        )}
+                      </div>
+
+                      {loadedRows.length === 0 ? (
+                        <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-2xl space-y-3 bg-slate-50/50">
+                          <div className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center mx-auto text-slate-400">
+                            <Users className="w-6 h-6" />
+                          </div>
+                          <div className="text-base font-bold text-slate-700">
+                            작업창이 비어있습니다.
+                          </div>
+                          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                            좌측에서 <strong>정직원, 아르바이트, 일용직</strong>을 선택한 후 <strong>[가져오기]</strong> 버튼을 누르면 이곳에 행(Row)으로 불러와 일괄 작성할 수 있습니다.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                          {loadedRows.map((row) => {
+                            const isFulltime = row.employmentType === "정직원";
+                            const isParttime = row.employmentType === "아르바이트";
+                            const isDaily = row.employmentType === "일용직";
+                            const computedHrs = computeRowHours(row);
+
+                            // 해당 사원의 주간 누적 근로시간 현황
+                            const currentWeeklyHrs = weeklyHoursByEmployee[row.empId] || 0;
+                            const projectedHrs = currentWeeklyHrs + computedHrs;
+                            const isPartTimeOver15h = isParttime && projectedHrs >= 15;
+
+                            return (
+                              <div
+                                key={row.rowId}
+                                className={`border-2 rounded-xl p-4 transition-all shadow-xs space-y-3 relative ${
+                                  isFulltime
+                                    ? "bg-slate-50/80 border-slate-300"
+                                    : isParttime
+                                    ? "bg-orange-50/40 border-orange-200"
+                                    : "bg-emerald-50/40 border-emerald-200"
+                                }`}
+                              >
+                                {/* 행 헤더: 이름 / 부서·직책 / 날짜 / [X] 제거 */}
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-lg text-slate-900">{row.name}</span>
+                                    <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded-md border ${
+                                      isFulltime
+                                        ? "bg-slate-200 text-slate-800 border-slate-300"
+                                        : isParttime
+                                        ? "bg-orange-100 text-[#EF7D25] border-orange-300"
+                                        : "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                    }`}>
+                                      {row.employmentType}
+                                    </span>
+                                    
+                                    {/* 👔 정직원: 이름 / 부서·직책 / 날짜 표시 */}
+                                    {isFulltime && (
+                                      <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-2.5 py-0.5 rounded-md">
+                                        부서/직책: {row.deptPosition}
+                                      </span>
+                                    )}
+
+                                    <span className="text-xs text-slate-500 font-medium">
+                                      📅 날짜: <strong>{row.date}</strong>
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => removeLoadedRow(row.rowId)}
+                                    className="text-xs text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg border border-transparent hover:border-rose-200 transition-all cursor-pointer flex items-center gap-1 font-bold"
+                                    title="작업창에서 해당 행 제외"
+                                  >
+                                    <X className="w-4 h-4" /> 제외
+                                  </button>
+                                </div>
+
+                                {/* 행 메인 바디: 근태구분 및 시간 입력 */}
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                                  {/* 근태 구분 (정직원 필수 / 알바·일용직 공통) */}
+                                  <div className="md:col-span-4">
+                                    <label className="block text-xs font-bold text-slate-600 mb-1">근태 구분</label>
+                                    <select
+                                      value={row.type}
+                                      onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
+                                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                                    >
+                                      {ATTEND_TYPES.map((t) => (
+                                        <option key={t} value={t}>{t}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {/* 시간 입력 컨트롤 (글로벌 토글 모드 반영) */}
+                                  <div className="md:col-span-8 space-y-2">
+                                    <label className="block text-xs font-bold text-slate-600">
+                                      근무시간 입력 ({row.mode === "start-end" ? "출퇴근 시간" : row.mode === "start-hours" ? "시작+총시간" : "출근체크 모드"})
+                                    </label>
+
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      {row.mode === "start-end" && (
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="time"
+                                            value={row.start}
+                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
+                                          />
+                                          <span className="text-slate-400 font-bold">~</span>
+                                          <input
+                                            type="time"
+                                            value={row.end}
+                                            onChange={(e) => updateRow(row.rowId, "end", e.target.value)}
+                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
+                                          />
+                                        </div>
+                                      )}
+
+                                      {row.mode === "start-hours" && (
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="time"
+                                            value={row.start}
+                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                          />
+                                          <input
+                                            type="number"
+                                            placeholder="총 시간(h)"
+                                            value={row.hours}
+                                            onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
+                                            className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                          />
+                                          <span className="text-xs font-bold text-slate-600">시간</span>
+                                        </div>
+                                      )}
+
+                                      {row.mode === "start-only" && (
+                                        <div className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-2 rounded-xl">
+                                          ✅ 출근 체크 모드 (기본 10시간 정산)
+                                        </div>
+                                      )}
+
+                                      {/* 🐥 아르바이트: 휴식(휴게)시간 차감 입력 및 실 근무시간 계산 */}
+                                      {isParttime && (
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                                          <span className="text-xs font-bold text-slate-600">휴식시간:</span>
+                                          <input
+                                            type="number"
+                                            placeholder="분(min)"
+                                            value={row.breakMinutes}
+                                            onChange={(e) => updateRow(row.rowId, "breakMinutes", e.target.value)}
+                                            className="w-16 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-extrabold text-slate-900 text-center"
+                                          />
+                                          <span className="text-xs font-bold text-slate-500">분</span>
+                                        </div>
+                                      )}
+
+                                      {/* 계산된 실 인정 근로시간 */}
+                                      <div className="text-sm font-black text-[#EF7D25] bg-orange-50 border border-orange-200 px-3.5 py-1.5 rounded-xl ml-auto">
+                                        실 근로: {computedHrs}시간
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* ⚠️ 아르바이트 주 15시간 초과 위험 알림 바 */}
+                                {isPartTimeOver15h && (
+                                  <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-lg flex items-center gap-2 mt-2">
+                                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                                    <span>
+                                      누적 주간 근로시간 <strong>{projectedHrs}시간</strong> 도달! (주휴수당 지급 조건 충족 및 퇴직금 발생 가능 알림)
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 하단 고정: 전체 근태 일괄 저장 버튼 */}
+                    <div className="pt-6 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={saveAllLoadedRows}
+                        disabled={loadedRows.length === 0}
+                        className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-black py-4 rounded-xl shadow-lg disabled:opacity-40 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+                      >
+                        <Save className="w-5 h-5" />
+                        로드된 전체 인원 근태 일괄 저장 ({loadedRows.length}명 ➔ Firestore)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. 하단 현황: 해당 매장 최근 저장된 근태 기록 리스트 */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
+                  <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    "{currentStoreCode}" 최근 저장된 근태 기록
+                  </h3>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                     {currentStoreAttendanceList.length === 0 && <div className="text-sm text-slate-500">근태 기록이 없습니다.</div>}
                     {currentStoreAttendanceList.slice().reverse().map((a) => {
                       const emp = employees.find((e) => e.id === a.employeeId);
                       return (
                         <div key={a.id} className="text-sm flex justify-between items-center border-b border-slate-100 py-2">
-                          <span className="font-semibold text-slate-800">{emp?.name || "사원"} · {a.date} · <span className="text-slate-600">{a.type}</span></span>
+                          <span className="font-semibold text-slate-800">
+                            {emp?.name || "사원"} · {a.date} · <span className="text-slate-600">{a.type}</span>
+                            {a.breakMinutes > 0 && <span className="text-xs text-slate-400 ml-2">(휴게 {a.breakMinutes}분 차감됨)</span>}
+                          </span>
                           <span className="font-bold text-[#EF7D25] bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-lg text-xs">{a.totalHours || a.hours}시간</span>
                         </div>
                       );
