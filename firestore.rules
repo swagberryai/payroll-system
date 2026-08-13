@@ -1,0 +1,19 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────
+// 프랜차이즈 인사·근태 시스템 — Firestore 보안 규칙 (개발 및 데모 프로토타입용)
+// ─────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /employees/{employeeId} {
+      allow read, write: if true;
+    }
+    match /attendance/{recordId} {
+      allow read, write: if true;
+    }
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
