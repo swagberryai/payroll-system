@@ -148,7 +148,7 @@ function getElapsedMonths(hireDateStr) {
   return Math.max(0, months);
 }
 
-function evaluateEmployeeLaborConditions(emp, attendanceList, config = DEFAULT_LABOR_CONFIG) {
+function evaluateEmployeeLaborConditions(emp, attendanceList, config = DEFAULT_LABOR_CONFIG, currentDateStr = "2025-02-13") {
   if (!emp || emp.employmentType !== "아르바이트") {
     return { weeklyBadge: null, insuranceBadge: null, severanceBadge: null, badges: [], highestLevelNum: 0 };
   }
@@ -161,8 +161,15 @@ function evaluateEmployeeLaborConditions(emp, attendanceList, config = DEFAULT_L
     const empAtt = attendanceList ? attendanceList.filter((a) => a.employeeId === emp.id && a.type === "정상출근") : [];
     const weeklyHours = empAtt.reduce((sum, a) => sum + (a.totalHours || a.hours || 0), 0);
     
+    // 요일 경과에 따른 시뮬레이션 근로시간 (월요일=1, 일요일=7) -> 월요일에 리셋
+    const currDate = new Date(currentDateStr);
+    let dayOfWeek = currDate.getDay();
+    if (dayOfWeek === 0) dayOfWeek = 7; 
+    
     const idNum = parseInt(String(emp.id).replace(/\D/g, "") || "1", 10);
-    const simWeeklyHours = weeklyHours > 0 ? weeklyHours : Math.round((((idNum * 4.3) % 7.5) + 9.5) * 10) / 10;
+    // 1주일에 12 ~ 20시간을 배정받는다고 가정
+    const maxWeeklyHours = (((idNum * 4.3) % 9) + 12); 
+    const simWeeklyHours = weeklyHours > 0 ? weeklyHours : Math.round((maxWeeklyHours / 7) * dayOfWeek * 10) / 10;
     
     const curHrs = simWeeklyHours;
     const cfg = activeCfg.weeklyAllowance || DEFAULT_LABOR_CONFIG.weeklyAllowance;
@@ -238,9 +245,18 @@ function evaluateEmployeeLaborConditions(emp, attendanceList, config = DEFAULT_L
     const mDays = new Set(empAtt.map((a) => a.date)).size;
     const hourlyWage = emp.employmentType === "정직원" ? 12000 : 10030;
 
+    const currDate = new Date(currentDateStr);
+    const dayOfMonth = currDate.getDate(); // 1 ~ 31
+    const daysInMonth = new Date(currDate.getFullYear(), currDate.getMonth() + 1, 0).getDate();
+    const monthProgress = dayOfMonth / daysInMonth;
+
     const idNum = parseInt(String(emp.id).replace(/\D/g, "") || "1", 10);
-    const simHours = mHours > 0 ? mHours : ((idNum * 13) % 35) + 33;
-    const simDays = mDays > 0 ? mDays : ((idNum * 3) % 6) + 3;
+    // 한 달에 최대 50 ~ 75시간, 6 ~ 12일 배정받는다고 가정
+    const maxMonthHours = ((idNum * 13) % 25) + 50; 
+    const maxMonthDays = ((idNum * 3) % 6) + 6;
+
+    const simHours = mHours > 0 ? mHours : Math.round(maxMonthHours * monthProgress * 10) / 10;
+    const simDays = mDays > 0 ? mDays : Math.round(maxMonthDays * monthProgress);
     const curIncome = Math.round((simHours * hourlyWage) / 10000);
     const cfg = activeCfg.socialInsurance || DEFAULT_LABOR_CONFIG.socialInsurance;
 
@@ -514,6 +530,52 @@ export default function PayrollFlowPrototype() {
   const [empSortConfig, setEmpSortConfig] = useState({ key: "storeCode", direction: "asc" }); // 정렬 상태
   const [selectedEmpProfile, setSelectedEmpProfile] = useState(null); // 모달 표시용 직원 정보
   const [dismissedSuspectedAlerts, setDismissedSuspectedAlerts] = useState([]); // 퇴직 의심 알림 닫기 상태
+  const [dismissedSeveranceAlerts, setDismissedSeveranceAlerts] = useState([]); // 퇴직금 발생 알림 닫기 상태
+  
+  // 공휴일 추가 커스텀 모달 State
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+  const [newHolidayName, setNewHolidayName] = useState("");
+  
+  // 연차/휴무일 관리 State (localStorage 연동)
+  const [companyHolidays, setCompanyHolidays] = useState(() => {
+    try {
+      const saved = localStorage.getItem("company_holidays");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [
+      { id: 1, date: "2025-01-01", name: "신정" },
+      { id: 2, date: "2025-01-28", name: "설날 연휴" },
+      { id: 3, date: "2025-01-29", name: "설날 당일" },
+      { id: 4, date: "2025-01-30", name: "설날 연휴" },
+      { id: 5, date: "2025-03-01", name: "삼일절" }
+    ];
+  });
+  
+  const [leaveBalances, setLeaveBalances] = useState(() => {
+    try {
+      const saved = localStorage.getItem("leave_balances");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return {};
+  });
+
+  // 변경 시 로컬스토리지 자동 저장
+  useEffect(() => {
+    localStorage.setItem("company_holidays", JSON.stringify(companyHolidays));
+  }, [companyHolidays]);
+
+  useEffect(() => {
+    localStorage.setItem("leave_balances", JSON.stringify(leaveBalances));
+  }, [leaveBalances]); 
 
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
@@ -1280,7 +1342,7 @@ export default function PayrollFlowPrototype() {
     return employees
       .filter((e) => e.employmentType === "아르바이트")
       .map((e) => {
-        const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+        const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig, attGlobalDate);
         return {
           emp: e,
           evalRes,
@@ -1290,13 +1352,104 @@ export default function PayrollFlowPrototype() {
 
   // 퇴직금 발생 확정 인원 (회계팀 알림 연동 대상)
   const confirmedSeveranceEmps = useMemo(() => {
-    return allLaborEvaluations.filter((item) => item.evalRes.severanceBadge?.level === "confirmed");
-  }, [allLaborEvaluations]);
+    return allLaborEvaluations.filter((item) => {
+      if (dismissedSeveranceAlerts.includes(item.emp.id)) return false;
+      return item.evalRes.severanceBadge?.level === "confirmed";
+    });
+  }, [allLaborEvaluations, dismissedSeveranceAlerts]);
 
   // 2단계 이상 이슈 대상 사원들
   const actionableLaborEmps = useMemo(() => {
     return allLaborEvaluations.filter((item) => item.evalRes.highestLevelNum >= 2);
   }, [allLaborEvaluations]);
+
+  // --- 휴무일 근무 및 연차 파생 데이터 ---
+  const leaveStats = useMemo(() => {
+    let promoteCount = 0; 
+    let settlementCount = 0; 
+    let minusCount = 0; 
+    
+    const fulltimeList = employees.filter(e => e.employmentType === "정직원").map(e => {
+      const curr = new Date(attGlobalDate);
+      const hire = new Date(e.hireDate || "2024-01-01");
+      let diffYears = curr.getFullYear() - hire.getFullYear();
+      if (
+        curr.getMonth() < hire.getMonth() ||
+        (curr.getMonth() === hire.getMonth() && curr.getDate() < hire.getDate())
+      ) {
+        diffYears--;
+      }
+      const yearsOfService = Math.max(0, diffYears);
+      const monthsOfService = (curr.getFullYear() - hire.getFullYear()) * 12 + (curr.getMonth() - hire.getMonth());
+      
+      let defaultTotal = 0;
+      if (yearsOfService === 0) {
+        defaultTotal = Math.max(0, monthsOfService); 
+      } else {
+        defaultTotal = 15 + Math.floor((yearsOfService - 1) / 2); 
+        if (defaultTotal > 25) defaultTotal = 25; 
+      }
+
+      const userBal = leaveBalances[e.id] || { total: defaultTotal, used: 0 };
+      const total = userBal.total;
+      const used = userBal.used;
+      const remain = total - used;
+
+      if (remain < 0) minusCount++;
+      if (e.resignDate && remain > 0) settlementCount++;
+      
+      const isPromote = (monthsOfService % 12 >= 6) && remain > 0;
+      if (isPromote && !e.resignDate) promoteCount++;
+
+      return {
+        ...e,
+        yearsOfService,
+        monthsOfService,
+        total,
+        used,
+        remain,
+        isPromote
+      };
+    });
+    
+    return { list: fulltimeList, promoteCount, settlementCount, minusCount };
+  }, [employees, leaveBalances, attGlobalDate]);
+
+  const holidayWorkStats = useMemo(() => {
+    // 반환 구조: [{ date: 'YYYY-MM-DD', name: '설날', stores: [{ storeName: '부천점', fulltime: 1, parttime: 2 }, ...] }]
+    const result = [];
+    
+    companyHolidays.forEach(holiday => {
+      // 해당 공휴일에 출근한 기록들 추출
+      const holidayAtt = attendance.filter(a => a.type === "정상출근" && a.date === holiday.date);
+      if (holidayAtt.length === 0) return; // 출근자가 없으면 스킵
+
+      const storeMap = {};
+      holidayAtt.forEach(a => {
+        const emp = employees.find(e => e.id === a.employeeId);
+        if (!emp) return;
+        
+        const sName = emp.storeCode;
+        if (!storeMap[sName]) {
+          storeMap[sName] = { storeName: sName, fulltime: 0, parttime: 0, daily: 0 };
+        }
+        
+        if (emp.employmentType === "정직원") storeMap[sName].fulltime += 1;
+        else if (emp.employmentType === "아르바이트") storeMap[sName].parttime += 1;
+        else storeMap[sName].daily += 1;
+      });
+
+      result.push({
+        date: holiday.date,
+        name: holiday.name,
+        stores: Object.values(storeMap)
+      });
+    });
+    
+    // 날짜 오름차순 정렬
+    result.sort((a, b) => new Date(a.date) - new Date(b.date));
+    return result;
+  }, [attendance, companyHolidays, employees]);
 
   // --- 직원 관리 탭 (Employee Management) 파생 데이터 ---
   const { workingEmps, resignedEmps, searchResultEmps } = useMemo(() => {
@@ -1590,7 +1743,7 @@ export default function PayrollFlowPrototype() {
                             </div>
                           )}
                           {fulltimeEmps.map((e) => {
-                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig, attGlobalDate);
                             const isChecked = selectedFulltimeIds.has(e.id);
                             return (
                               <label
@@ -1665,7 +1818,7 @@ export default function PayrollFlowPrototype() {
                           )}
                           {parttimeEmps.map((e) => {
                             const isChecked = selectedParttimeIds.has(e.id);
-                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig, attGlobalDate);
                             return (
                               <label
                                 key={e.id}
@@ -1736,7 +1889,7 @@ export default function PayrollFlowPrototype() {
                           )}
                           {dailyEmps.map((e) => {
                             const isChecked = selectedDailyIds.has(e.id);
-                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig, attGlobalDate);
                             return (
                               <label
                                 key={e.id}
@@ -2588,6 +2741,18 @@ export default function PayrollFlowPrototype() {
               </button>
 
               <button
+                onClick={() => setAccountingSubtab("holidays")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "holidays"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>연차/휴무일 관리</span>
+              </button>
+
+              <button
                 onClick={() => setAccountingSubtab("labor")}
                 className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "labor"
@@ -2952,6 +3117,190 @@ export default function PayrollFlowPrototype() {
               </div>
             )}
 
+            {/* 서브탭 5: 🏝️ 연차/휴무일 관리 */}
+            {accountingSubtab === "holidays" && (
+              <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
+                {/* 리스크 알림 카드 3개 */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="bg-white border-2 border-rose-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                    <div>
+                      <div className="text-rose-600 font-bold text-sm mb-1 flex items-center gap-1.5"><AlertCircle className="w-4 h-4"/> 연차 사용 촉진 대상</div>
+                      <div className="text-2xl font-black text-slate-900">{leaveStats.promoteCount}명</div>
+                      <div className="text-xs text-slate-500 mt-1">소멸 6개월 전, 사용 촉구(서면) 필요</div>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                    <div>
+                      <div className="text-amber-600 font-bold text-sm mb-1 flex items-center gap-1.5"><DollarSign className="w-4 h-4"/> 연차 수당 정산 필요</div>
+                      <div className="text-2xl font-black text-slate-900">{leaveStats.settlementCount}명</div>
+                      <div className="text-xs text-slate-500 mt-1">퇴사자 및 미사용 소멸 연차 정산</div>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-purple-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                    <div>
+                      <div className="text-purple-600 font-bold text-sm mb-1 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4"/> 마이너스 연차 (초과)</div>
+                      <div className="text-2xl font-black text-slate-900">{leaveStats.minusCount}명</div>
+                      <div className="text-xs text-slate-500 mt-1">부여량보다 많이 사용, 급여 공제 필요</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* 좌측: 연차 관리 테이블 */}
+                  <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden flex flex-col">
+                    <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                        <Users className="w-5 h-5 text-[#EF7D25]" /> 정직원 연차 관리 대장
+                      </h3>
+                      <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-md border border-emerald-200">
+                        입사일 기준 근속 자동계산 중
+                      </span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200 text-xs">
+                          <tr>
+                            <th className="px-4 py-3">이름/소속</th>
+                            <th className="px-4 py-3">입사일</th>
+                            <th className="px-4 py-3">근속 (만)</th>
+                            <th className="px-4 py-3 text-center bg-blue-50/50">총 부여</th>
+                            <th className="px-4 py-3 text-center bg-rose-50/50">사용</th>
+                            <th className="px-4 py-3 text-center bg-emerald-50/50">잔여</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {leaveStats.list.map(e => (
+                            <tr key={e.id} className={`hover:bg-slate-50/50 ${e.resignDate ? "opacity-50" : ""}`}>
+                              <td className="px-4 py-3">
+                                <div className="font-bold text-slate-900">{e.name} {e.isPromote && <span className="ml-1 inline-flex w-2 h-2 rounded-full bg-rose-500 animate-pulse" title="촉진 대상"></span>}</div>
+                                <div className="text-xs text-slate-500">{e.storeCode}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{e.hireDate || "-"}</td>
+                              <td className="px-4 py-3">
+                                <span className="font-bold text-[#EF7D25]">{e.yearsOfService}년차</span>
+                                <div className="text-[10px] text-slate-400">({e.monthsOfService}개월)</div>
+                              </td>
+                              <td className="px-4 py-3 text-center bg-blue-50/10">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="w-16 text-center border border-slate-200 rounded p-1 text-sm font-bold bg-white focus:ring-1 focus:ring-blue-400"
+                                  value={e.total}
+                                  onChange={(evt) => {
+                                    const val = parseInt(evt.target.value) || 0;
+                                    setLeaveBalances(prev => ({ ...prev, [e.id]: { ...(prev[e.id]||{used:0}), total: val }}));
+                                  }}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-center bg-rose-50/10">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="w-16 text-center border border-slate-200 rounded p-1 text-sm font-bold bg-white focus:ring-1 focus:ring-rose-400"
+                                  value={e.used}
+                                  onChange={(evt) => {
+                                    const val = parseInt(evt.target.value) || 0;
+                                    setLeaveBalances(prev => ({ ...prev, [e.id]: { ...(prev[e.id]||{total:e.total}), used: val }}));
+                                  }}
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-center bg-emerald-50/10">
+                                <span className={`font-black text-lg ${e.remain < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {e.remain}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* 우측: 휴무일 관리 및 카운터 */}
+                  <div className="space-y-6">
+                    {/* 공휴일 캘린더/목록 */}
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 space-y-4">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                          <Calendar className="w-5 h-5 text-[#EF7D25]" /> 본사 지정 공휴일
+                        </h3>
+                        <button
+                          onClick={() => setIsHolidayModalOpen(true)}
+                          className="text-xs bg-orange-50 text-[#EF7D25] hover:bg-orange-100 px-2 py-1 rounded font-bold border border-orange-200 transition-colors cursor-pointer"
+                        >
+                          + 날짜 추가
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                        {companyHolidays.map(h => (
+                          <div key={h.id} className="flex justify-between items-center p-2 rounded-lg bg-slate-50 border border-slate-100 text-sm hover:border-slate-300 transition-colors group">
+                            <span className="font-bold text-slate-700">{h.date}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500 text-xs">{h.name}</span>
+                              <button
+                                onClick={() => setCompanyHolidays(companyHolidays.filter(item => item.id !== h.id))}
+                                className="text-slate-400 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer p-0.5"
+                                title="삭제"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 월간 휴일근무자 (자동집계) */}
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-5 space-y-4">
+                      <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                        <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                          <CheckCircle2 className="w-5 h-5 text-amber-500" /> 이번 달 공휴일 근무자
+                        </h3>
+                        <span className="text-xs text-slate-400">자동 카운트</span>
+                      </div>
+                      <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                        {holidayWorkStats.map(holiday => (
+                          <div key={holiday.date} className="border border-amber-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                            <div className="bg-amber-50/80 px-3 py-2 border-b border-amber-100 flex justify-between items-center">
+                              <span className="font-bold text-amber-900">{holiday.date}</span>
+                              <span className="text-xs font-bold text-amber-700 bg-amber-200/50 px-2 py-0.5 rounded-full">{holiday.name}</span>
+                            </div>
+                            <div className="divide-y divide-slate-100">
+                              {holiday.stores.map(store => {
+                                const total = store.fulltime + store.parttime + store.daily;
+                                return (
+                                  <div key={store.storeName} className="p-3 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                                    <div className="font-bold text-slate-800 text-sm">{store.storeName}</div>
+                                    <div className="flex gap-2 text-xs">
+                                      {store.fulltime > 0 && (
+                                        <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-bold">정직원 {store.fulltime}명</span>
+                                      )}
+                                      {store.parttime > 0 && (
+                                        <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded font-bold">아르바이트 {store.parttime}명</span>
+                                      )}
+                                      {store.daily > 0 && (
+                                        <span className="bg-slate-200 text-slate-700 px-2 py-1 rounded font-bold">일용직 {store.daily}명</span>
+                                      )}
+                                      <span className="bg-slate-800 text-white px-2 py-1 rounded font-black ml-1">총 {total}명</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                        {holidayWorkStats.length === 0 && (
+                          <div className="text-center text-slate-400 text-xs py-6 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                            이번 달 등록된 공휴일 근무 기록이 없습니다.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 서브탭 3: ⚖️ 근로조건 관리 (아르바이트 항목별 이슈현황 보드판 + 수치적 Config 관리) */}
             {accountingSubtab === "labor" && (
               <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
@@ -2972,7 +3321,14 @@ export default function PayrollFlowPrototype() {
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
                       {confirmedSeveranceEmps.map(({ emp, evalRes }) => (
-                        <div key={emp.id} className="bg-white/10 backdrop-blur-xs border border-white/20 rounded-xl p-3 flex justify-between items-center text-sm">
+                        <div key={emp.id} className="relative bg-white/10 backdrop-blur-xs border border-white/20 rounded-xl p-3 flex justify-between items-center text-sm pr-9">
+                          <button
+                            onClick={() => setDismissedSeveranceAlerts([...dismissedSeveranceAlerts, emp.id])}
+                            className="absolute top-1 right-1 p-1 text-white/50 hover:bg-white/20 hover:text-white rounded-full transition-colors cursor-pointer"
+                            title="처리 완료 혹은 무시 (알림 닫기)"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                           <div>
                             <span className="font-bold">{emp.name}</span>
                             <span className="text-xs ml-2 opacity-80">({emp.storeCode})</span>
@@ -3194,6 +3550,7 @@ export default function PayrollFlowPrototype() {
                           {
                             allLaborEvaluations.filter((x) => {
                               if (!x.evalRes.severanceBadge) return false;
+                              if (x.evalRes.severanceBadge.level === "confirmed") return false;
                               if (laborBoardFilter === "actionable") return x.evalRes.severanceBadge.levelNum >= 2;
                               return true;
                             }).length
@@ -3205,6 +3562,7 @@ export default function PayrollFlowPrototype() {
                         {allLaborEvaluations
                           .filter((x) => {
                             if (!x.evalRes.severanceBadge) return false;
+                            if (x.evalRes.severanceBadge.level === "confirmed") return false;
                             if (laborBoardFilter === "actionable") return x.evalRes.severanceBadge.levelNum >= 2;
                             return true;
                           })
@@ -3833,106 +4191,32 @@ export default function PayrollFlowPrototype() {
           </div>
         )}
 
-        {/* 서브탭 4: 👥 공통 직원 관리 (전사 통합 인명록) */}
-        {((role === "accounting" && accountingSubtab === "employees") || (role === "hr" && hrSubtab === "employees")) && (
-          <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
-            {/* 상단: 직원 관리 필터 및 검색 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                <button onClick={() => setEmpManagementTab("working")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "working" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>근무자</button>
-                <button onClick={() => setEmpManagementTab("resigned")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "resigned" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
-                <button onClick={() => setEmpManagementTab("search")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "search" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>검색</button>
-              </div>
-
-              {empManagementTab === "search" && (
-                <div className="relative w-full md:w-80">
-                  <input type="text" placeholder="이름으로 사원 검색..." value={empSearchTerm} onChange={(e) => setEmpSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#EF7D25]" />
-                </div>
-              )}
-            </div>
-
-            {/* 하단: 리스트 렌더링 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider font-bold">
-                    {(() => {
-                      const handleSort = (key) => {
-                        let direction = "asc";
-                        if (empSortConfig.key === key && empSortConfig.direction === "asc") {
-                          direction = "desc";
-                        }
-                        setEmpSortConfig({ key, direction });
-                      };
-                      const renderSortIcon = (key) => {
-                        if (empSortConfig.key !== key) return null;
-                        return empSortConfig.direction === "asc" ? " ↑" : " ↓";
-                      };
-                      return (
-                        <>
-                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("storeCode")}>매장명{renderSortIcon("storeCode")}</th>
-                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("name")}>이름{renderSortIcon("name")}</th>
-                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("employmentType")}>고용형태{renderSortIcon("employmentType")}</th>
-                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("hireDate")}>입사일{renderSortIcon("hireDate")}</th>
-                          {empManagementTab === "resigned" && <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("resignDate")}>퇴사일{renderSortIcon("resignDate")}</th>}
-                          <th className="px-6 py-4 text-right">상세 정보</th>
-                        </>
-                      );
-                    })()}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).map(emp => (
-                    <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-sm font-semibold text-slate-800">{emp.storeCode}</td>
-                      <td className="px-6 py-4">
-                        <span className="font-bold text-slate-900">{emp.name}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs font-bold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700">{emp.employmentType}</span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600 font-medium">{emp.hireDate || "-"}</td>
-                      {empManagementTab === "resigned" && <td className="px-6 py-4 text-sm text-red-600 font-bold">{emp.resignDate}</td>}
-                      <td className="px-6 py-4 text-right">
-                        <button onClick={() => setSelectedEmpProfile(emp)} className="text-sm bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 font-semibold transition-colors cursor-pointer shadow-xs">프로필 열람</button>
-                      </td>
-                    </tr>
-                  ))}
-                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">해당하는 직원 데이터가 없습니다.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
         {/* ---------------- 4. 💼 인사팀 화면 (회계 승인 전/후 정보 유출 방지 및 계좌번호 제외) ---------------- */}
         {role === "hr" && (
           <div className="space-y-8 animate-in fade-in duration-200">
             {/* 인사팀 상단 탭 버튼 */}
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => setHrSubtab("confirm")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  hrSubtab === "confirm" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Briefcase className="w-4 h-4" />
-                <span>서류 관리</span>
-              </button>
-              <button
-                onClick={() => setHrSubtab("employees")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  hrSubtab === "employees" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>직원 관리</span>
-              </button>
-            </div>
+            {hrSubtab !== "dashboard" && (
+              <div className="flex gap-3 mb-6">
+                <button
+                  onClick={() => setHrSubtab("confirm")}
+                  className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                    hrSubtab === "confirm" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Briefcase className="w-4 h-4" />
+                  <span>서류 관리</span>
+                </button>
+                <button
+                  onClick={() => setHrSubtab("employees")}
+                  className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                    hrSubtab === "employees" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>직원 관리</span>
+                </button>
+              </div>
+            )}
 
             {/* 인사 서브탭 1: 서류 관리 (사원 승인 목록) */}
             {hrSubtab === "confirm" && (
@@ -4142,6 +4426,82 @@ export default function PayrollFlowPrototype() {
             )}
           </div>
         )}
+        {/* 서브탭 4: 👥 공통 직원 관리 (전사 통합 인명록) */}
+        {((role === "accounting" && accountingSubtab === "employees") || (role === "hr" && hrSubtab === "employees")) && (
+          <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
+            {/* 상단: 직원 관리 필터 및 검색 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                <button onClick={() => setEmpManagementTab("working")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "working" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>근무자</button>
+                <button onClick={() => setEmpManagementTab("resigned")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "resigned" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
+                <button onClick={() => setEmpManagementTab("search")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "search" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>검색</button>
+              </div>
+
+              {empManagementTab === "search" && (
+                <div className="relative w-full md:w-80">
+                  <input type="text" placeholder="이름으로 사원 검색..." value={empSearchTerm} onChange={(e) => setEmpSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#EF7D25]" />
+                </div>
+              )}
+            </div>
+
+            {/* 하단: 리스트 렌더링 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider font-bold">
+                    {(() => {
+                      const handleSort = (key) => {
+                        let direction = "asc";
+                        if (empSortConfig.key === key && empSortConfig.direction === "asc") {
+                          direction = "desc";
+                        }
+                        setEmpSortConfig({ key, direction });
+                      };
+                      const renderSortIcon = (key) => {
+                        if (empSortConfig.key !== key) return null;
+                        return empSortConfig.direction === "asc" ? " ↑" : " ↓";
+                      };
+                      return (
+                        <>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("storeCode")}>매장명{renderSortIcon("storeCode")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("name")}>이름{renderSortIcon("name")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("employmentType")}>고용형태{renderSortIcon("employmentType")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("hireDate")}>입사일{renderSortIcon("hireDate")}</th>
+                          {empManagementTab === "resigned" && <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("resignDate")}>퇴사일{renderSortIcon("resignDate")}</th>}
+                          <th className="px-6 py-4 text-right">상세 정보</th>
+                        </>
+                      );
+                    })()}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).map(emp => (
+                    <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-800">{emp.storeCode}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-bold text-slate-900">{emp.name}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700">{emp.employmentType}</span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 font-medium">{emp.hireDate || "-"}</td>
+                      {empManagementTab === "resigned" && <td className="px-6 py-4 text-sm text-red-600 font-bold">{emp.resignDate}</td>}
+                      <td className="px-6 py-4 text-right">
+                        <button onClick={() => setSelectedEmpProfile(emp)} className="text-sm bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 font-semibold transition-colors cursor-pointer shadow-xs">프로필 열람</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">해당하는 직원 데이터가 없습니다.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
 
         {/* ---------------- 5. 🏪 매장 대시보드 (해당 매장 독점 데이터 연동) ---------------- */}
         {role === "hq" && (
@@ -4470,6 +4830,79 @@ export default function PayrollFlowPrototype() {
         );
       })()}
 
+      {/* 🏝️ 공휴일 날짜 추가 모달 */}
+      {isHolidayModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-[#EF7D25] p-4 flex justify-between items-center text-white">
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Calendar className="w-5 h-5" /> 공휴일 등록
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsHolidayModalOpen(false);
+                  setNewHolidayDate("");
+                  setNewHolidayName("");
+                }} 
+                className="text-white/80 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">날짜 선택</label>
+                <input
+                  type="date"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-bold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
+                  value={newHolidayDate}
+                  onChange={(e) => setNewHolidayDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">공휴일 이름</label>
+                <input
+                  type="text"
+                  placeholder="예: 어린이날, 대체공휴일 등"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-bold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
+                  value={newHolidayName}
+                  onChange={(e) => setNewHolidayName(e.target.value)}
+                />
+              </div>
+            </div>
+            
+            <div className="p-4 bg-slate-50 flex gap-2 justify-end border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setIsHolidayModalOpen(false);
+                  setNewHolidayDate("");
+                  setNewHolidayName("");
+                }}
+                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  if (!newHolidayDate || !newHolidayName) {
+                    alert("날짜와 이름을 모두 입력해주세요.");
+                    return;
+                  }
+                  setCompanyHolidays(prev => [...prev, { id: Date.now(), date: newHolidayDate, name: newHolidayName }]);
+                  setIsHolidayModalOpen(false);
+                  setNewHolidayDate("");
+                  setNewHolidayName("");
+                }}
+                className="px-4 py-2 text-sm font-bold text-white bg-[#EF7D25] hover:bg-[#d96b1b] rounded-lg shadow-md transition-colors cursor-pointer"
+              >
+                등록하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 토스트 알림 */}
       {toast && (
         <div className={`fixed bottom-8 right-8 text-base font-bold px-5 py-3.5 rounded-2xl shadow-2xl transition-all ${
@@ -4720,6 +5153,7 @@ function DocChip({ ok, label, employeeName = "사원" }) {
           </div>
         </div>
       )}
+
     </>
   );
 }
