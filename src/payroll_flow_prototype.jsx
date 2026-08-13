@@ -1192,21 +1192,21 @@ export default function PayrollFlowPrototype() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-bold text-slate-500">근무시간 입력 방식 (일괄 전환):</span>
-                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 gap-1.5">
+                    <span className="text-sm font-bold text-slate-700">근무시간 입력 방식 (일괄 전환):</span>
+                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 gap-2">
                       {[
-                        { key: "start-end", label: "⏱️ 출~퇴근시간 (09:00~18:00)" },
-                        { key: "start-hours", label: "🔢 총 근무시간 (8h)" },
-                        { key: "start-only", label: "✅ 출근 체크 (기본 10h)" },
+                        { key: "start-only", label: "⏱️ 시작만 (10h)" },
+                        { key: "start-hours", label: "🔢 시작 + 총시간" },
+                        { key: "start-end", label: "⌛ 시작 + 종료시간" },
                       ].map((m) => (
                         <button
                           key={m.key}
                           type="button"
                           onClick={() => handleGlobalTimeModeChange(m.key)}
-                          className={`text-xs px-3 py-2 rounded-lg font-bold transition-all cursor-pointer ${
+                          className={`text-sm px-4 py-2.5 rounded-xl font-extrabold transition-all cursor-pointer shadow-xs ${
                             attTimeMode === m.key
-                              ? "bg-[#EF7D25] text-white shadow-xs"
-                              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                              ? "bg-[#EF7D25] text-white ring-2 ring-orange-300"
+                              : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-200"
                           }`}
                         >
                           {m.label}
@@ -1542,24 +1542,26 @@ export default function PayrollFlowPrototype() {
                                   </button>
                                 </div>
 
-                                {/* 행 메인 바디: 근태구분 및 시간 입력 */}
+                                {/* 행 메인 바디: 근태구분(정직원 전용) 및 시간 입력 */}
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                                  {/* 근태 구분 (정직원 필수 / 알바·일용직 공통) */}
-                                  <div className="md:col-span-4">
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">근태 구분</label>
-                                    <select
-                                      value={row.type}
-                                      onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
-                                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
-                                    >
-                                      {ATTEND_TYPES.map((t) => (
-                                        <option key={t} value={t}>{t}</option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                  {/* 근태 구분 (정직원 전용) */}
+                                  {isFulltime && (
+                                    <div className="md:col-span-4">
+                                      <label className="block text-xs font-bold text-slate-600 mb-1">근태 구분</label>
+                                      <select
+                                        value={row.type}
+                                        onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                                      >
+                                        {ATTEND_TYPES.map((t) => (
+                                          <option key={t} value={t}>{t}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
 
-                                  {/* 시간 입력 컨트롤 (글로벌 토글 모드 반영) */}
-                                  <div className="md:col-span-8 space-y-2">
+                                  {/* 시간 입력 컨트롤 (글로벌 토글 모드 반영 - 정직원은 8컬럼, 아르바이트/일용직은 12컬럼 전체 사용) */}
+                                  <div className={`${isFulltime ? "md:col-span-8" : "md:col-span-12"} space-y-2`}>
                                     <label className="block text-xs font-bold text-slate-600">
                                       근무시간 입력 ({row.mode === "start-end" ? "출퇴근 시간" : row.mode === "start-hours" ? "시작+총시간" : "출근체크 모드"})
                                     </label>
