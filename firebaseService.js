@@ -250,16 +250,39 @@ function computeHours({ mode, start, end, hours }) {
 }
 
 export async function submitAttendance(attForm, storeCode, currentUserId = "store_user") {
-  const totalHours = computeHours(attForm);
+  const totalHours = attForm.totalHours !== undefined ? Number(attForm.totalHours) : computeHours(attForm);
   const dateEnd = new Date(attForm.date + "T23:59:59");
-  await addDoc(attendanceCol, {
-    ...attForm,
-    storeCode,
-    totalHours,
-    editableUntil: Timestamp.fromDate(dateEnd),
-    lastEditedAt: serverTimestamp(),
-    lastEditedBy: currentUserId,
-  });
+  try {
+    const q = query(
+      attendanceCol,
+      where("employeeId", "==", attForm.employeeId),
+      where("date", "==", attForm.date)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docId = snap.docs[0].id;
+      const ref = doc(db, "attendance", docId);
+      await updateDoc(ref, {
+        ...attForm,
+        storeCode,
+        totalHours,
+        editableUntil: Timestamp.fromDate(dateEnd),
+        lastEditedAt: serverTimestamp(),
+        lastEditedBy: currentUserId,
+      });
+    } else {
+      await addDoc(attendanceCol, {
+        ...attForm,
+        storeCode,
+        totalHours,
+        editableUntil: Timestamp.fromDate(dateEnd),
+        lastEditedAt: serverTimestamp(),
+        lastEditedBy: currentUserId,
+      });
+    }
+  } catch (err) {
+    console.warn("Attendance submit fallback:", err);
+  }
   return totalHours;
 }
 

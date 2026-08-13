@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Store, Landmark, Briefcase, Building2, UserPlus, Lock, Unlock,
-  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save
+  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
 
@@ -93,8 +93,411 @@ function isVisibleInRegistrationStatus(employee) {
 
   const confirmedKstDay = getKstDateString(confirmedTime);
   const currentKstDay = getKstDateString(new Date());
-
   return confirmedKstDay === currentKstDay;
+}
+
+const DEFAULT_LABOR_CONFIG = {
+  weeklyAllowance: {
+    targetHours: 15,
+    level1Min: 10.0,
+    level1Max: 11.9,
+    level2Min: 12.0,
+    level2Max: 13.4,
+    level3Min: 13.5,
+    level3Max: 14.9,
+    confirmedMin: 15.0,
+  },
+  socialInsurance: {
+    targetHours: 60,
+    targetDays: 8,
+    targetIncome: 220,
+    level1HoursMin: 40,
+    level1HoursMax: 49,
+    level1DaysMin: 4,
+    level1DaysMax: 5,
+    level2HoursMin: 50,
+    level2HoursMax: 54,
+    level2DaysMin: 6,
+    level2DaysMax: 6,
+    level3HoursMin: 55,
+    level3HoursMax: 59,
+    level3DaysMin: 7,
+    level3DaysMax: 7,
+    confirmedHoursMin: 60,
+    confirmedDaysMin: 8,
+    confirmedIncomeMin: 220,
+  },
+  severance: {
+    targetMonths: 12,
+    level1Months: 6,
+    level2Months: 8,
+    level3Months: 10,
+    confirmedMonths: 12,
+  },
+};
+
+function getElapsedMonths(hireDateStr) {
+  if (!hireDateStr) return 0;
+  const hire = new Date(hireDateStr);
+  if (isNaN(hire.getTime())) return 0;
+  const now = new Date();
+  let months = (now.getFullYear() - hire.getFullYear()) * 12 + (now.getMonth() - hire.getMonth());
+  if (now.getDate() < hire.getDate()) {
+    months -= 1;
+  }
+  return Math.max(0, months);
+}
+
+function evaluateEmployeeLaborConditions(emp, attendanceList, config = DEFAULT_LABOR_CONFIG) {
+  if (!emp || emp.employmentType !== "아르바이트") {
+    return { weeklyBadge: null, insuranceBadge: null, severanceBadge: null, badges: [], highestLevelNum: 0 };
+  }
+
+  const activeCfg = config || DEFAULT_LABOR_CONFIG;
+
+  // 1. 주휴수당 (weeklyAllowance) - 정직원 제외
+  let weeklyBadge = null;
+  if (emp.employmentType !== "정직원") {
+    const empAtt = attendanceList ? attendanceList.filter((a) => a.employeeId === emp.id && a.type === "정상출근") : [];
+    const weeklyHours = empAtt.reduce((sum, a) => sum + (a.totalHours || a.hours || 0), 0);
+    
+    const idNum = parseInt(String(emp.id).replace(/\D/g, "") || "1", 10);
+    const simWeeklyHours = weeklyHours > 0 ? weeklyHours : Math.round((((idNum * 4.3) % 7.5) + 9.5) * 10) / 10;
+    
+    const curHrs = simWeeklyHours;
+    const cfg = activeCfg.weeklyAllowance || DEFAULT_LABOR_CONFIG.weeklyAllowance;
+
+    if (curHrs >= cfg.confirmedMin) {
+      weeklyBadge = {
+        category: "주휴수당",
+        level: "confirmed",
+        levelNum: 4,
+        text: "주휴수당 발생 확정",
+        color: "bg-orange-500 text-white font-bold border-orange-600 shadow-xs",
+        curValue: `주간 누적 ${curHrs.toFixed(1)}시간`,
+        targetValue: `주 ${cfg.targetHours}시간 기준`,
+        reason: `주간 누적 ${curHrs.toFixed(1)}시간으로 주 ${cfg.targetHours}시간 이상 도달`,
+        nextCondition: "조정 불가 (이미 발생 확정)",
+        resolution: "이미 발생 확정 — 조정 불가, 주휴수당 지급 처리 안내로 전환",
+        curHours: curHrs,
+      };
+    } else if (curHrs >= cfg.level3Min) {
+      const margin = Math.max(0.1, cfg.confirmedMin - curHrs).toFixed(1);
+      weeklyBadge = {
+        category: "주휴수당",
+        level: "level3",
+        levelNum: 3,
+        text: "주휴수당 발생 3단계",
+        color: "bg-rose-100 text-rose-700 border-rose-300 font-semibold",
+        curValue: `주간 누적 ${curHrs.toFixed(1)}시간`,
+        targetValue: `주 ${cfg.targetHours}시간 기준`,
+        reason: `주간 누적 ${cfg.level3Min}~${cfg.level3Max}시간 구간에 해당하여 3단계 안내`,
+        nextCondition: `${cfg.confirmedMin}시간 이상 도달 시 확정 단계로 전환`,
+        resolution: `이번 주 잔여 근무를 ${margin}시간 이내로 조정하면 ${cfg.targetHours}시간 미만 유지 가능 (남은 여유시간 임박)`,
+        curHours: curHrs,
+        remainingHours: margin,
+      };
+    } else if (curHrs >= cfg.level2Min) {
+      const margin = Math.max(0.1, cfg.confirmedMin - curHrs).toFixed(1);
+      weeklyBadge = {
+        category: "주휴수당",
+        level: "level2",
+        levelNum: 2,
+        text: "주휴수당 발생 2단계",
+        color: "bg-amber-100 text-amber-800 border-amber-300 font-semibold",
+        curValue: `주간 누적 ${curHrs.toFixed(1)}시간`,
+        targetValue: `주 ${cfg.targetHours}시간 기준`,
+        reason: `주간 누적 ${cfg.level2Min}~${cfg.level2Max}시간 구간에 해당하여 2단계 안내`,
+        nextCondition: `${cfg.level3Min}시간 이상 도달 시 3단계로 전환`,
+        resolution: `이번 주 잔여 근무를 ${margin}시간 이내로 조정하면 ${cfg.targetHours}시간 미만 유지 가능`,
+        curHours: curHrs,
+        remainingHours: margin,
+      };
+    } else if (curHrs >= cfg.level1Min) {
+      weeklyBadge = {
+        category: "주휴수당",
+        level: "level1",
+        levelNum: 1,
+        text: "주휴수당 발생 1단계",
+        color: "bg-blue-100 text-blue-700 border-blue-200 font-semibold",
+        curValue: `주간 누적 ${curHrs.toFixed(1)}시간`,
+        targetValue: `주 ${cfg.targetHours}시간 기준`,
+        reason: `주간 누적 ${cfg.level1Min}~${cfg.level1Max}시간 구간에 해당하여 1단계 안내`,
+        nextCondition: `${cfg.level2Min}시간 이상 도달 시 2단계로 전환`,
+        resolution: null,
+        curHours: curHrs,
+      };
+    }
+  }
+
+  // 2. 4대보험 (socialInsurance) - 전 고용형태 공통
+  let insuranceBadge = null;
+  {
+    const empAtt = attendanceList ? attendanceList.filter((a) => a.employeeId === emp.id && a.type === "정상출근") : [];
+    const mHours = empAtt.reduce((sum, a) => sum + (a.totalHours || a.hours || 0), 0);
+    const mDays = new Set(empAtt.map((a) => a.date)).size;
+    const hourlyWage = emp.employmentType === "정직원" ? 12000 : 10030;
+
+    const idNum = parseInt(String(emp.id).replace(/\D/g, "") || "1", 10);
+    const simHours = mHours > 0 ? mHours : ((idNum * 13) % 35) + 33;
+    const simDays = mDays > 0 ? mDays : ((idNum * 3) % 6) + 3;
+    const curIncome = Math.round((simHours * hourlyWage) / 10000);
+    const cfg = activeCfg.socialInsurance || DEFAULT_LABOR_CONFIG.socialInsurance;
+
+    if (simHours >= cfg.confirmedHoursMin || simDays >= cfg.confirmedDaysMin || curIncome >= cfg.confirmedIncomeMin) {
+      insuranceBadge = {
+        category: "4대보험",
+        level: "confirmed",
+        levelNum: 4,
+        text: "4대보험 발생 확정",
+        color: "bg-orange-500 text-white font-bold border-orange-600 shadow-xs",
+        curValue: `월 누적 근로시간 ${simHours.toFixed(1)}시간 / ${simDays}일 / 월소득 ${curIncome}만원`,
+        targetValue: `${cfg.targetHours}시간 이상 또는 ${cfg.targetDays}일 이상 또는 월소득 ${cfg.targetIncome}만원 이상`,
+        reason: `월 ${cfg.confirmedHoursMin}시간 이상 또는 ${cfg.confirmedDaysMin}일 이상 요건 충족`,
+        nextCondition: "조정 불가 (이미 발생 확정)",
+        resolution: "이미 발생 확정 — 조정 불가, 가입 처리 안내로 전환",
+        curHours: simHours,
+        curDays: simDays,
+        curIncome,
+      };
+    } else if (simHours >= cfg.level3HoursMin || simDays >= cfg.level3DaysMin) {
+      const margin = Math.max(0.5, cfg.confirmedHoursMin - simHours).toFixed(1);
+      insuranceBadge = {
+        category: "4대보험",
+        level: "level3",
+        levelNum: 3,
+        text: "4대보험 발생 3단계",
+        color: "bg-rose-100 text-rose-700 border-rose-300 font-semibold",
+        curValue: `월 누적 근로시간 ${simHours.toFixed(1)}시간 / ${simDays}일 / 월소득 ${curIncome}만원`,
+        targetValue: `${cfg.targetHours}시간 이상 또는 ${cfg.targetDays}일 이상`,
+        reason: `월 ${cfg.level3HoursMin}~${cfg.level3HoursMax}시간 구간에 해당하여 3단계 안내`,
+        nextCondition: `${cfg.confirmedHoursMin}시간 이상 도달 시 확정 단계로 전환`,
+        resolution: `이번 달 잔여 근무를 ${margin}시간 이내로 조정하면 ${cfg.targetHours}시간 미만 유지 가능 (근무일수 8일 임박 시 추가 근무 정지 옵션 제시)`,
+        curHours: simHours,
+        curDays: simDays,
+        curIncome,
+      };
+    } else if (simHours >= cfg.level2HoursMin || simDays >= cfg.level2DaysMin) {
+      const margin = Math.max(0.5, cfg.confirmedHoursMin - simHours).toFixed(1);
+      insuranceBadge = {
+        category: "4대보험",
+        level: "level2",
+        levelNum: 2,
+        text: "4대보험 발생 2단계",
+        color: "bg-amber-100 text-amber-800 border-amber-300 font-semibold",
+        curValue: `월 누적 근로시간 ${simHours.toFixed(1)}시간 / ${simDays}일 / 월소득 ${curIncome}만원`,
+        targetValue: `${cfg.targetHours}시간 이상 또는 ${cfg.targetDays}일 이상`,
+        reason: `월 ${cfg.level2HoursMin}~${cfg.level2HoursMax}시간 구간에 해당하여 2단계 안내`,
+        nextCondition: `${cfg.level3HoursMin}시간 이상 도달 시 3단계로 전환`,
+        resolution: `이번 달 잔여 근무를 ${margin}시간 이내로 조정하면 ${cfg.targetHours}시간 미만 유지 가능합니다.`,
+        curHours: simHours,
+        curDays: simDays,
+        curIncome,
+      };
+    } else if (simHours >= cfg.level1HoursMin || simDays >= cfg.level1DaysMin) {
+      insuranceBadge = {
+        category: "4대보험",
+        level: "level1",
+        levelNum: 1,
+        text: "4대보험 발생 1단계",
+        color: "bg-blue-100 text-blue-700 border-blue-200 font-semibold",
+        curValue: `월 누적 근로시간 ${simHours.toFixed(1)}시간 / ${simDays}일 / 월소득 ${curIncome}만원`,
+        targetValue: `${cfg.targetHours}시간 이상 또는 ${cfg.targetDays}일 이상`,
+        reason: `월 ${cfg.level1HoursMin}~${cfg.level1HoursMax}시간 구간에 해당하여 1단계 안내`,
+        nextCondition: `${cfg.level2HoursMin}시간 이상 도달 시 2단계로 전환`,
+        resolution: null,
+        curHours: simHours,
+        curDays: simDays,
+        curIncome,
+      };
+    }
+  }
+
+  // 3. 퇴직금 (severance) - 전 고용형태 공통
+  let severanceBadge = null;
+  {
+    const cfg = activeCfg.severance || DEFAULT_LABOR_CONFIG.severance;
+    let elapsedMonths = getElapsedMonths(emp.hireDate);
+    
+    const idNum = parseInt(String(emp.id).replace(/\D/g, "") || "1", 10);
+    if (!emp.hireDate || elapsedMonths === 0) {
+      elapsedMonths = (idNum * 2.3) % 14;
+    }
+    const elapsedInt = Math.floor(elapsedMonths);
+
+    if (elapsedInt >= cfg.confirmedMonths) {
+      severanceBadge = {
+        category: "퇴직금",
+        level: "confirmed",
+        levelNum: 4,
+        text: "퇴직금 발생 확정",
+        color: "bg-orange-500 text-white font-bold border-orange-600 shadow-xs",
+        curValue: `입사 후 ${elapsedInt}개월 경과`,
+        targetValue: `입사 후 만 1년 (${cfg.targetMonths}개월) 도달`,
+        reason: `입사 후 만 1년 도달 (근속 1년 + 주 15시간 이상)`,
+        nextCondition: "조정 불가 (퇴직금 발생 확정)",
+        resolution: "0개월 후 퇴직금 발생 — 정산 처리 안내 + 회계팀 알림 자동 전송",
+        elapsedMonths: elapsedInt,
+      };
+    } else if (elapsedInt >= cfg.level3Months) {
+      const monthsLeft = cfg.targetMonths - elapsedInt;
+      severanceBadge = {
+        category: "퇴직금",
+        level: "level3",
+        levelNum: 3,
+        text: `퇴직금 발생 2개월전`,
+        color: "bg-rose-100 text-rose-700 border-rose-300 font-semibold",
+        curValue: `입사 후 ${elapsedInt}개월 경과`,
+        targetValue: `입사 후 만 1년 (근속 1년 + 주 15시간 이상)`,
+        reason: `만 1년 대비 2개월 전 시점 안내`,
+        nextCondition: `입사 후 ${cfg.confirmedMonths}개월 (만 1년) 도달 시 퇴직금 발생 확정 단계로 전환`,
+        resolution: `${monthsLeft}개월 후 퇴직금 발생`,
+        elapsedMonths: elapsedInt,
+      };
+    } else if (elapsedInt >= cfg.level2Months) {
+      const monthsLeft = cfg.targetMonths - elapsedInt;
+      severanceBadge = {
+        category: "퇴직금",
+        level: "level2",
+        levelNum: 2,
+        text: `퇴직금 발생 4개월전`,
+        color: "bg-amber-100 text-amber-800 border-amber-300 font-semibold",
+        curValue: `입사 후 ${elapsedInt}개월 경과`,
+        targetValue: `입사 후 만 1년 (근속 1년 + 주 15시간 이상)`,
+        reason: `만 1년 대비 4개월 전 시점 안내`,
+        nextCondition: `입사 후 ${cfg.level3Months}개월 경과 시 2개월전 단계로 전환`,
+        resolution: `${monthsLeft}개월 후 퇴직금 발생`,
+        elapsedMonths: elapsedInt,
+      };
+    } else if (elapsedInt >= cfg.level1Months) {
+      severanceBadge = {
+        category: "퇴직금",
+        level: "level1",
+        levelNum: 1,
+        text: `퇴직금 발생 6개월전`,
+        color: "bg-blue-100 text-blue-700 border-blue-200 font-semibold",
+        curValue: `입사 후 ${elapsedInt}개월 경과`,
+        targetValue: `입사 후 만 1년 (근속 1년 + 주 15시간 이상)`,
+        reason: `입사 후 6개월 경과 시점 안내`,
+        nextCondition: `입사 후 ${cfg.level2Months}개월 경과 시 4개월전 단계로 전환`,
+        resolution: null,
+        elapsedMonths: elapsedInt,
+      };
+    }
+  }
+
+  const badges = [weeklyBadge, insuranceBadge, severanceBadge].filter(Boolean);
+  const highestLevelNum = Math.max(0, ...badges.map((b) => b.levelNum));
+
+  return {
+    weeklyBadge,
+    insuranceBadge,
+    severanceBadge,
+    badges,
+    highestLevelNum,
+  };
+}
+
+function BadgeDetailModal({ isOpen, onClose, emp, badge, onAction }) {
+  if (!isOpen || !emp || !badge) return null;
+
+  const showResolution = badge.levelNum >= 2;
+
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className={`text-xs px-2.5 py-0.5 rounded-md font-bold border ${badge.color}`}>
+              {badge.category} · {badge.level === "confirmed" ? "확정" : `${badge.levelNum}단계`}
+            </span>
+            <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md">
+              {emp.storeCode || "매장"}
+            </span>
+          </div>
+          <h3 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+            <span>{emp.name}</span>
+            <span className="text-xs font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">
+              {emp.employmentType}
+            </span>
+          </h3>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-sm">
+          <div className="flex justify-between items-start">
+            <span className="font-semibold text-slate-500 w-28 shrink-0">현재 수치</span>
+            <span className="font-bold text-slate-900 text-right">{badge.curValue}</span>
+          </div>
+          <div className="flex justify-between items-start">
+            <span className="font-semibold text-slate-500 w-28 shrink-0">기준 수치</span>
+            <span className="font-medium text-slate-700 text-right">{badge.targetValue}</span>
+          </div>
+          <div className="flex justify-between items-start">
+            <span className="font-semibold text-slate-500 w-28 shrink-0">단계 판정 이유</span>
+            <span className="font-medium text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-right">
+              "{badge.reason}"
+            </span>
+          </div>
+          <div className="flex justify-between items-start">
+            <span className="font-semibold text-slate-500 w-28 shrink-0">다음 단계 전환</span>
+            <span className="font-medium text-slate-700 text-right">"{badge.nextCondition}"</span>
+          </div>
+        </div>
+
+        {showResolution && badge.resolution ? (
+          <div className="bg-orange-50/90 border-2 border-orange-200 rounded-xl p-4 space-y-2">
+            <div className="text-xs font-bold text-orange-800 tracking-wider flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-orange-600" />
+              <span>── 해결 방안 (2단계 이상 노출) ──</span>
+            </div>
+            <p className="text-sm font-bold text-slate-800 leading-relaxed">
+              "{badge.resolution}"
+            </p>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-500 bg-slate-100 p-3 rounded-xl">
+            💡 1단계 및 확정 단계는 참고용 안내로 제공되며, 별도 스케줄 조정 제안이 표시되지 않습니다.
+          </div>
+        )}
+
+        <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
+          {showResolution && badge.level !== "confirmed" && (
+            <>
+              <button
+                type="button"
+                onClick={() => onAction && onAction("schedule_proposal", emp, badge)}
+                className="px-3.5 py-2 bg-orange-100 text-orange-900 hover:bg-orange-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                [스케줄 조정 제안 보기]
+              </button>
+              <button
+                type="button"
+                onClick={() => onAction && onAction("stop_extra_work", emp, badge)}
+                className="px-3.5 py-2 bg-rose-100 text-rose-900 hover:bg-rose-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                [이번 달 추가 근무 정지]
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 bg-slate-800 text-white hover:bg-slate-900 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+          >
+            [닫기]
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function PayrollFlowPrototype() {
@@ -105,17 +508,64 @@ export default function PayrollFlowPrototype() {
   const [accountingSubtab, setAccountingSubtab] = useState("confirm");
   const [hrSubtab, setHrSubtab] = useState("confirm");
 
+  // 직원 관리 탭 관련 State
+  const [empManagementTab, setEmpManagementTab] = useState("working"); // working, resigned, search
+  const [empSearchTerm, setEmpSearchTerm] = useState("");
+  const [empSortConfig, setEmpSortConfig] = useState({ key: "storeCode", direction: "asc" }); // 정렬 상태
+  const [selectedEmpProfile, setSelectedEmpProfile] = useState(null); // 모달 표시용 직원 정보
+  const [dismissedSuspectedAlerts, setDismissedSuspectedAlerts] = useState([]); // 퇴직 의심 알림 닫기 상태
+
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [stores, setStores] = useState([]);
   
-  const [storeTab, setStoreTab] = useState("register");
+  const [storeTab, setStoreTab] = useState("attendance");
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // 사원 수정 ID & 매장 수정 ID
   const [editingEmpId, setEditingEmpId] = useState(null);
   const [editingStoreId, setEditingStoreId] = useState(null);
+
+  // 근로조건 설정 Config 상태 (localStorage 연동)
+  const [laborConfig, setLaborConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem("payroll_labor_config");
+      return saved ? JSON.parse(saved) : DEFAULT_LABOR_CONFIG;
+    } catch (e) {
+      return DEFAULT_LABOR_CONFIG;
+    }
+  });
+
+  // Config 수정 폼 상태
+  const [configForm, setConfigForm] = useState(laborConfig);
+
+  useEffect(() => {
+    setConfigForm(laborConfig);
+  }, [laborConfig]);
+
+  // 뱃지 상세 팝업 상태
+  const [badgeModalData, setBadgeModalData] = useState({
+    isOpen: false,
+    emp: null,
+    badge: null,
+  });
+
+  // 회계팀 근로조건 보드판 필터 (all | actionable)
+  const [laborBoardFilter, setLaborBoardFilter] = useState("all");
+
+  const openBadgeModal = (emp, badge) => {
+    setBadgeModalData({ isOpen: true, emp, badge });
+  };
+
+  const handleBadgeAction = (actionType, emp, badge) => {
+    if (actionType === "schedule_proposal") {
+      flash(`[${emp.name}] 스케줄 조정 제안: "${badge.resolution}"`);
+    } else if (actionType === "stop_extra_work") {
+      flash(`[${emp.name}] 이번 달 추가 근무 정지가 적용되었습니다.`);
+    }
+    setBadgeModalData({ isOpen: false, emp: null, badge: null });
+  };
 
   // 대시보드 이슈 읽음(확인) 처리 상태 관리 (회계, 매장, 인사)
   const [seenAccountingIssueIds, setSeenAccountingIssueIds] = useState(new Set());
@@ -284,6 +734,20 @@ export default function PayrollFlowPrototype() {
       setFormError("필수항목(성명·주민번호·연락처·입사일)을 모두 입력하세요.");
       return;
     }
+
+    // 중복 체크 로직 (A안: 경고 후 허용)
+    if (!editingEmpId) {
+      const duplicateEmp = employees.find(
+        (e) => e.ssn === form.ssn || (form.account && e.account === form.account)
+      );
+      if (duplicateEmp) {
+        const confirmMsg = `입력하신 주민등록번호(또는 계좌번호)는 이미 [${duplicateEmp.storeCode}] 매장에 등록된 이력(${duplicateEmp.name})이 있습니다.\n매장 이동이나 겸직 처리를 위해 신규 등록을 강행하시겠습니까?`;
+        if (!window.confirm(confirmMsg)) {
+          return; // 등록 취소
+        }
+      }
+    }
+
     setFormError("");
     try {
       if (editingEmpId) {
@@ -367,6 +831,7 @@ export default function PayrollFlowPrototype() {
   const [attTargetTab, setAttTargetTab] = useState("fulltime"); // "fulltime" | "parttime" | "daily"
   
   // 아르바이트 & 일용직 선택 체크박스 상태
+  const [selectedFulltimeIds, setSelectedFulltimeIds] = useState(new Set());
   const [selectedParttimeIds, setSelectedParttimeIds] = useState(new Set());
   const [selectedDailyIds, setSelectedDailyIds] = useState(new Set());
 
@@ -392,8 +857,20 @@ export default function PayrollFlowPrototype() {
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
   }, [currentStoreEmployees]);
 
+  // ── 🔒 과거 날짜 근태 수정 권한 검증 헬퍼 (매장 불가 / 본사 회계팀 가능) ──
+  const checkEditPermission = () => {
+    const isPastDate = attGlobalDate < todayStr;
+    const isStoreUser = role === "store";
+    if (isStoreUser && isPastDate) {
+      flash("지난자료는 수정이 불가능합니다. 본사 회계팀을 통해 수정하세요", "error");
+      return false;
+    }
+    return true;
+  };
+
   // 1. 정직원 전체 우측 작업창으로 가져오기
   const importAllFulltime = () => {
+    if (!checkEditPermission()) return;
     if (fulltimeEmps.length === 0) {
       flash("가져올 정직원이 없습니다. 사원등록을 확인하세요.", "error");
       return;
@@ -414,7 +891,7 @@ export default function PayrollFlowPrototype() {
           mode: attTimeMode,
           start: "09:00",
           end: "18:00",
-          hours: 8,
+          hours: attTimeMode === "start-only" ? 10 : 8,
           breakMinutes: 0,
         });
         count++;
@@ -424,8 +901,109 @@ export default function PayrollFlowPrototype() {
     flash(`정직원 ${count}명을 우측 작업창으로 가져왔습니다!`);
   };
 
+  // 1-5. 선택한 정직원 우측 작업창으로 가져오기
+  const importSelectedFulltime = () => {
+    if (!checkEditPermission()) return;
+    if (selectedFulltimeIds.size === 0) {
+      flash("가져올 정직원을 체크 선택하세요.", "error");
+      return;
+    }
+    const newRows = [...loadedRows];
+    let count = 0;
+    fulltimeEmps.forEach((emp) => {
+      if (selectedFulltimeIds.has(emp.id)) {
+        const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+        if (!exists) {
+          newRows.push({
+            rowId: `ft_${emp.id}_${Date.now()}_${Math.random()}`,
+            empId: emp.id,
+            name: emp.name,
+            employmentType: "정직원",
+            deptPosition: [emp.dept, emp.position].filter(Boolean).join(" · ") || "정직원",
+            date: attGlobalDate,
+            type: "정상출근",
+            mode: attTimeMode,
+            start: "09:00",
+            end: "18:00",
+            hours: attTimeMode === "start-only" ? 10 : 8,
+            breakMinutes: 0,
+          });
+          count++;
+        }
+      }
+    });
+    setLoadedRows(newRows);
+    setSelectedFulltimeIds(new Set());
+    flash(`정직원 ${count}명을 우측 작업창으로 가져왔습니다!`);
+  };
+
+  const importAllParttime = () => {
+    if (!checkEditPermission()) return;
+    if (parttimeEmps.length === 0) {
+      flash("가져올 아르바이트가 없습니다.", "error");
+      return;
+    }
+    const newRows = [...loadedRows];
+    let count = 0;
+    parttimeEmps.forEach((emp) => {
+      const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+      if (!exists) {
+        newRows.push({
+          rowId: `pt_${emp.id}_${Date.now()}_${Math.random()}`,
+          empId: emp.id,
+          name: emp.name,
+          employmentType: "아르바이트",
+          deptPosition: "아르바이트",
+          date: attGlobalDate,
+          type: "정상출근",
+          mode: attTimeMode,
+          start: "09:00",
+          end: "18:00",
+          hours: attTimeMode === "start-only" ? 10 : 8,
+          breakMinutes: 60,
+        });
+        count++;
+      }
+    });
+    setLoadedRows(newRows);
+    flash(`아르바이트 ${count}명을 우측 작업창으로 가져왔습니다!`);
+  };
+
+  const importAllDaily = () => {
+    if (!checkEditPermission()) return;
+    if (dailyEmps.length === 0) {
+      flash("가져올 일용직이 없습니다.", "error");
+      return;
+    }
+    const newRows = [...loadedRows];
+    let count = 0;
+    dailyEmps.forEach((emp) => {
+      const exists = newRows.some((r) => r.empId === emp.id && r.date === attGlobalDate);
+      if (!exists) {
+        newRows.push({
+          rowId: `dy_${emp.id}_${Date.now()}_${Math.random()}`,
+          empId: emp.id,
+          name: emp.name,
+          employmentType: "일용직",
+          deptPosition: "일용직",
+          date: attGlobalDate,
+          type: "정상출근",
+          mode: attTimeMode,
+          start: "09:00",
+          end: "18:00",
+          hours: attTimeMode === "start-only" ? 10 : 8,
+          breakMinutes: 0,
+        });
+        count++;
+      }
+    });
+    setLoadedRows(newRows);
+    flash(`일용직 ${count}명을 우측 작업창으로 가져왔습니다!`);
+  };
+
   // 2. 선택한 아르바이트 우측 작업창으로 가져오기
   const importSelectedParttime = () => {
+    if (!checkEditPermission()) return;
     if (selectedParttimeIds.size === 0) {
       flash("가져올 아르바이트생을 체크 선택하세요.", "error");
       return;
@@ -447,7 +1025,7 @@ export default function PayrollFlowPrototype() {
             mode: attTimeMode,
             start: "09:00",
             end: "18:00",
-            hours: 8,
+            hours: attTimeMode === "start-only" ? 10 : 8,
             breakMinutes: 60, // 기본 휴게 60분
           });
           count++;
@@ -461,6 +1039,7 @@ export default function PayrollFlowPrototype() {
 
   // 3. 선택한 일용직 우측 작업창으로 가져오기
   const importSelectedDaily = () => {
+    if (!checkEditPermission()) return;
     if (selectedDailyIds.size === 0) {
       flash("가져올 일용직 인원을 체크 선택하세요.", "error");
       return;
@@ -482,7 +1061,7 @@ export default function PayrollFlowPrototype() {
             mode: attTimeMode,
             start: "09:00",
             end: "18:00",
-            hours: 8,
+            hours: attTimeMode === "start-only" ? 10 : 8,
             breakMinutes: 0,
           });
           count++;
@@ -496,33 +1075,61 @@ export default function PayrollFlowPrototype() {
 
   // 로드된 행 제거 (X 버튼)
   const removeLoadedRow = (rowId) => {
+    if (!checkEditPermission()) return;
     setLoadedRows((prev) => prev.filter((r) => r.rowId !== rowId));
   };
 
   // 로드된 행 데이터 개별 변경
   const updateRow = (rowId, key, val) => {
+    if (!checkEditPermission()) return;
     setLoadedRows((prev) =>
       prev.map((r) => (r.rowId === rowId ? { ...r, [key]: val } : r))
     );
   };
 
-  // 전역 날짜 변경 시 로드된 행 날짜도 일괄 변경
+  // 전역 날짜 변경 시 선택한 날짜의 기존 저장 데이터 자동 조회 & 로드
   const handleGlobalDateChange = (newDate) => {
     setAttGlobalDate(newDate);
-    setLoadedRows((prev) => prev.map((r) => ({ ...r, date: newDate })));
+    const dateAtt = attendance.filter((a) => a.date === newDate);
+    if (dateAtt.length > 0) {
+      const rows = dateAtt.map((a) => {
+        const emp = currentStoreEmployees.find((e) => e.id === a.employeeId || String(e.id) === String(a.employeeId));
+        return {
+          rowId: a.id || `att_${a.employeeId}_${newDate}`,
+          empId: a.employeeId,
+          name: emp ? emp.name : (a.name || "사원"),
+          employmentType: emp ? emp.employmentType : (a.employmentType || "아르바이트"),
+          deptPosition: emp ? [emp.dept, emp.position].filter(Boolean).join(" · ") : "사원",
+          date: newDate,
+          type: a.type || "정상출근",
+          mode: a.mode || "start-only",
+          start: a.start || "09:00",
+          end: a.end || "18:00",
+          hours: a.hours !== undefined ? a.hours : (a.totalHours || 8),
+          breakMinutes: a.breakMinutes || 0,
+        };
+      });
+      setLoadedRows(rows);
+    } else {
+      setLoadedRows([]);
+    }
   };
 
   // 전역 근무시간 입력방식 변경 시 로드된 행 입력방식 일괄 변경
   const handleGlobalTimeModeChange = (newMode) => {
+    if (!checkEditPermission()) return;
     setAttTimeMode(newMode);
-    setLoadedRows((prev) => prev.map((r) => ({ ...r, mode: newMode })));
+    setLoadedRows((prev) => prev.map((r) => {
+      const newHours = newMode === "start-only" ? 10 : r.hours;
+      return { ...r, mode: newMode, hours: newHours };
+    }));
   };
 
   // 행의 실제 계산된 수당 인정 근로시간 계산
   const computeRowHours = (row) => {
     let rawHours = 0;
     if (row.mode === "start-only") {
-      rawHours = 10;
+      rawHours = row.hours !== undefined ? Number(row.hours) : 10;
     } else if (row.mode === "start-hours") {
       rawHours = Number(row.hours) || 0;
     } else if (row.mode === "start-end" && row.start && row.end) {
@@ -542,11 +1149,13 @@ export default function PayrollFlowPrototype() {
 
   // 우측 작업창의 전체 인원 근태 일괄 저장 (Firestore)
   const saveAllLoadedRows = async () => {
+    if (!checkEditPermission()) return;
     if (loadedRows.length === 0) {
       flash("우측 작업창에 저장할 근태 행이 없습니다.", "error");
       return;
     }
     try {
+      const editorRole = role === "store" ? "store_user" : "accounting_user";
       for (const row of loadedRows) {
         const totalHrs = computeRowHours(row);
         const payload = {
@@ -560,9 +1169,13 @@ export default function PayrollFlowPrototype() {
           totalHours: totalHrs,
           breakMinutes: row.breakMinutes || 0,
         };
-        await firebaseService.submitAttendance(payload, currentStoreCode, "store_user");
+        await firebaseService.submitAttendance(payload, currentStoreCode, editorRole);
       }
-      flash(`🎉 총 ${loadedRows.length}명의 근태 기록이 성공적으로 일괄 저장되었습니다!`);
+      if (role !== "store" && attGlobalDate < todayStr) {
+        flash(`🎉 [본사 회계팀 권한] 지난 근태 기록 (${attGlobalDate})이 DB에 즉각 수정/반영되었습니다!`);
+      } else {
+        flash(`🎉 총 ${loadedRows.length}명의 근태 기록이 성공적으로 일괄 저장되었습니다!`);
+      }
       setLoadedRows([]);
     } catch (err) {
       flash(err.message || "일괄 저장 중 오류가 발생했습니다.", "error");
@@ -624,6 +1237,33 @@ export default function PayrollFlowPrototype() {
   const waitingHr = useMemo(() => employees.filter((e) => e.accountingConfirmed && !e.hrConfirmed), [employees]);
   const pendingResignations = useMemo(() => employees.filter((e) => e.resignDate && !e.resignConfirmed), [employees]);
 
+  const suspectedResignations = useMemo(() => {
+    const todayDate = new Date(attGlobalDate || "2025-02-13");
+    return employees.filter(e => {
+      if (e.resignDate) return false;
+      if (e.employmentType === "일용직") return false;
+      if (dismissedSuspectedAlerts.includes(e.id)) return false;
+      
+      const empAtts = attendance.filter(a => a.empId === e.id);
+      let lastDateStr = e.hireDate;
+      if (empAtts.length > 0) {
+        const sorted = [...empAtts].sort((a,b) => new Date(b.date) - new Date(a.date));
+        lastDateStr = sorted[0].date;
+      }
+      if (!lastDateStr) return false;
+      
+      const lastDate = new Date(lastDateStr);
+      const diffTime = todayDate.getTime() - lastDate.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays >= 14;
+    });
+  }, [employees, attendance, attGlobalDate, dismissedSuspectedAlerts]);
+
+  const allResignedEmployees = useMemo(() => {
+    return [...employees].filter(e => e.resignDate).sort((a,b) => new Date(b.resignDate) - new Date(a.resignDate));
+  }, [employees]);
+
+
   // 전 매장 주 15시간 이상 아르바이트생
   const allPartTime15hAlerts = useMemo(() => {
     return employees
@@ -634,6 +1274,66 @@ export default function PayrollFlowPrototype() {
       })
       .filter((x) => x.hrs >= 15);
   }, [employees, weeklyHoursByEmployee]);
+
+  // 근로조건 이슈 전체 평가 (오직 아르바이트 사원만 대상)
+  const allLaborEvaluations = useMemo(() => {
+    return employees
+      .filter((e) => e.employmentType === "아르바이트")
+      .map((e) => {
+        const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+        return {
+          emp: e,
+          evalRes,
+        };
+      });
+  }, [employees, attendance, laborConfig]);
+
+  // 퇴직금 발생 확정 인원 (회계팀 알림 연동 대상)
+  const confirmedSeveranceEmps = useMemo(() => {
+    return allLaborEvaluations.filter((item) => item.evalRes.severanceBadge?.level === "confirmed");
+  }, [allLaborEvaluations]);
+
+  // 2단계 이상 이슈 대상 사원들
+  const actionableLaborEmps = useMemo(() => {
+    return allLaborEvaluations.filter((item) => item.evalRes.highestLevelNum >= 2);
+  }, [allLaborEvaluations]);
+
+  // --- 직원 관리 탭 (Employee Management) 파생 데이터 ---
+  const { workingEmps, resignedEmps, searchResultEmps } = useMemo(() => {
+    // 동적 정렬 함수
+    const sortEmps = (empList) => {
+      return [...empList].sort((a, b) => {
+        let valA = a[empSortConfig.key] || "";
+        let valB = b[empSortConfig.key] || "";
+        
+        if (empSortConfig.key === "hireDate" || empSortConfig.key === "resignDate") {
+          valA = valA ? new Date(valA).getTime() : 0;
+          valB = valB ? new Date(valB).getTime() : 0;
+        }
+
+        if (valA < valB) return empSortConfig.direction === "asc" ? -1 : 1;
+        if (valA > valB) return empSortConfig.direction === "asc" ? 1 : -1;
+        
+        // 값이 같으면 매장코드 -> 이름순으로 2차 정렬
+        if (a.storeCode !== b.storeCode) {
+          return a.storeCode.localeCompare(b.storeCode);
+        }
+        return a.name.localeCompare(b.name);
+      });
+    };
+
+    const working = sortEmps(employees.filter(e => !e.resignDate));
+    const resigned = sortEmps(employees.filter(e => e.resignDate));
+    
+    let searched = [];
+    if (empSearchTerm.trim()) {
+      searched = sortEmps(
+        employees.filter(e => e.name.toLowerCase().includes(empSearchTerm.toLowerCase().trim()))
+      );
+    }
+    
+    return { workingEmps: working, resignedEmps: resigned, searchResultEmps: searched };
+  }, [employees, empSearchTerm, empSortConfig]);
 
   // 🎯 회계팀 대시보드 총 이슈 식별 목록 (고유 ID)
   const currentAccountingIssues = useMemo(() => {
@@ -745,432 +1445,9 @@ export default function PayrollFlowPrototype() {
     return currentStoreIssues.filter((id) => !seenStoreIssueIds.has(id)).length;
   }, [currentStoreIssues, seenStoreIssueIds]);
 
-  return (
-    <div className="w-full min-h-screen bg-[#F1F5F9] text-slate-800 antialiased pb-16" style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif" }}>
-      {/* 0. 로그인 계정 / 매장 로그인 아이디 분석 시뮬레이션 바 */}
-      <div className="bg-slate-900 text-slate-200 px-8 py-2 flex flex-wrap items-center justify-between text-xs sm:text-sm font-semibold border-b border-slate-800">
-        <div className="flex items-center gap-2">
-          <Key className="w-4 h-4 text-[#EF7D25]" />
-          <span>로그인 계정 권한 구분 시뮬레이션:</span>
-          <select
-            value={currentUserRole === "store" ? `store:${currentStoreCode}` : currentUserRole}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val.startsWith("store:")) {
-                const sCode = val.split(":")[1];
-                setCurrentUserRole("store");
-                setCurrentStoreCode(sCode);
-                setRole("store");
-              } else {
-                setCurrentUserRole(val);
-                setRole(val);
-                if (val === "hr") setHrSubtab("confirm");
-              }
-            }}
-            className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-[#EF7D25]"
-          >
-            <option value="accounting">🏛️ 회계팀 계정 (전체 회계 및 매장관리)</option>
-            <option value="hr">💼 인사팀 계정 (전체 인사 승인)</option>
-            {storeList.map((st) => (
-              <option key={st.id || st.code} value={`store:${st.name}`}>
-                🏪 {st.name} 매장 전용 계정 로그인
-              </option>
-            ))}
-          </select>
-        </div>
 
-        <div className="text-slate-400 text-xs">
-          현재 로그인: <strong className="text-white">{currentUserRole === "accounting" ? "회계팀" : currentUserRole === "hr" ? "인사팀" : `🏪 "${currentStoreCode}" 매장 계정`}</strong>
-        </div>
-      </div>
-
-      {/* 1. 상단 헤더 바 */}
-      <header className="bg-[#EF7D25] text-white px-8 py-5 flex items-center justify-between shadow-md">
-        <div className="text-2xl sm:text-3xl font-black tracking-widest text-white select-none">
-          SWAGBERRY
-        </div>
-        {employees.length === 0 && !loading && (
-          <button
-            onClick={seedDemoData}
-            className="text-sm bg-white hover:bg-slate-100 text-[#EF7D25] font-extrabold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4 text-[#EF7D25]" /> 샘플 데이터 복구
-          </button>
-        )}
-      </header>
-
-      {/* 2. 상단 네비게이션 탭 */}
-      <nav className="bg-white border-b border-slate-200/90 px-8 py-3 flex flex-wrap items-center gap-2.5 shadow-xs">
-        {/* 1. 회계팀 탭 */}
-        {(currentUserRole === "accounting" || role === "accounting" || role === "accounting_dashboard") && (
-          <button
-            onClick={() => setRole("accounting")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "accounting"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <Landmark className="w-5 h-5 text-[#EF7D25]" />
-            <span>회계팀</span>
-            {(waitingAccounting.length + pendingResignations.length) > 0 && (
-              <span className="ml-1 bg-[#EF7D25] text-white text-xs font-extrabold rounded-full px-2 py-0.5 shadow-xs">
-                {waitingAccounting.length + pendingResignations.length}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* 2. 📊 회계팀 대시보드 탭 (간소화 명칭) */}
-        {(currentUserRole === "accounting" || role === "accounting" || role === "accounting_dashboard") && (
-          <button
-            onClick={() => setRole("accounting_dashboard")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "accounting_dashboard"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
-            <span>회계팀 대시보드</span>
-            {unreadAccountingIssuesCount > 0 && (
-              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
-                {unreadAccountingIssuesCount}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* 3. 인사팀 탭 */}
-        {(currentUserRole === "hr" || role === "hr") && (
-          <button
-            onClick={() => { setRole("hr"); setHrSubtab("confirm"); }}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "hr" && hrSubtab === "confirm"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <Briefcase className="w-5 h-5 text-emerald-600" />
-            <span>인사팀</span>
-            {(waitingHr.length + waitingAccounting.length) > 0 && (
-              <span className="ml-1 bg-emerald-600 text-white text-xs font-extrabold rounded-full px-2 py-0.5 shadow-xs">
-                {waitingHr.length + waitingAccounting.length}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* 4. 📊 인사팀 대시보드 탭 (회계팀 대시보드와 동일하게 상단 네비에 배치) */}
-        {(currentUserRole === "hr" || role === "hr") && (
-          <button
-            onClick={() => { setRole("hr"); setHrSubtab("dashboard"); }}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "hr" && hrSubtab === "dashboard"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <LayoutDashboard className="w-5 h-5 text-emerald-600" />
-            <span>인사팀 대시보드</span>
-            {unreadHrIssuesCount > 0 && (
-              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
-                {unreadHrIssuesCount}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* 5. 매장 계정용 매장 관리 탭 */}
-        {(currentUserRole === "store" || role === "store") && (
-          <button
-            onClick={() => setRole("store")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "store"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <Store className="w-5 h-5 text-slate-700" />
-            <span>매장 관리</span>
-          </button>
-        )}
-
-        {/* 6. 🏪 매장 대시보드 탭 (매장 계정 전용) */}
-        {(currentUserRole === "store" || role === "hq") && (
-          <button
-            onClick={() => setRole("hq")}
-            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
-              role === "hq"
-                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
-                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
-            }`}
-          >
-            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
-            <span>매장 대시보드</span>
-            {unreadStoreIssuesCount > 0 && (
-              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
-                {unreadStoreIssuesCount}
-              </span>
-            )}
-          </button>
-        )}
-      </nav>
-
-      {/* 3. 메인 콘텐츠 영역 */}
-      <main className="max-w-[1400px] mx-auto p-6 md:p-8 mt-2">
-        {/* ---------------- 1. 매장 화면 (해당 로그인 매장의 데이터만 독립 연동) ---------------- */}
-        {role === "store" && (
-          <div>
-            {/* 로그인 매장 고정 배너 */}
-            <div className="flex flex-wrap items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-xs mb-6 gap-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-[#EF7D25] shrink-0">
-                  <Store className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-xl font-black text-slate-900">
-                      <span className="text-[#EF7D25] mr-1.5">[{currentStoreObj.code || "STR"}]</span>
-                      {currentStoreObj.name}
-                    </h2>
-                    <span className="text-xs bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-md">
-                      🔒 해당 매장 데이터 전용 연동됨
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
-                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {currentStoreObj.address || "주소 미입력"}</span>
-                    <span>|</span>
-                    <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {currentStoreObj.phone || "전화번호 미입력"}</span>
-                    <span>|</span>
-                    <span className="flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-400" /> 사업자번호: {currentStoreObj.businessNumber || "-"}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
-                소속 직원: <strong className="text-[#EF7D25] text-sm font-black ml-1">{currentStoreEmployees.length}명</strong>
-              </div>
-            </div>
-
-            {/* 서브탭 버튼 */}
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => setStoreTab("register")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer ${
-                  storeTab === "register"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                사원등록
-              </button>
-              <button
-                onClick={() => setStoreTab("attendance")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer ${
-                  storeTab === "attendance"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                근태입력
-              </button>
-            </div>
-
-            {storeTab === "register" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* 왼쪽 사원 등록 폼 (소속 매장은 자동 지정되며 수정 불가) */}
-                <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                      {editingEmpId ? <Edit3 className="w-5 h-5 text-[#EF7D25]" /> : <UserPlus className="w-5 h-5 text-[#EF7D25]" />}
-                      <h2>{editingEmpId ? `✏️ "${form.name}" 사원 서류 보완 및 수정` : "신규 사원 등록"}</h2>
-                    </div>
-                  </div>
-
-                  {editingEmpId && (
-                    <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-3.5 text-sm font-semibold text-[#EF7D25]">
-                      💡 <strong>"{form.name}"</strong> 사원의 기존 정보가 로드되었습니다. 수정 후 하단 [수정완료] 버튼을 누르세요.
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-base">
-                    <Field label="성명 *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="예: 홍길동" />
-                    <Field label="주민등록번호 *" value={form.ssn} onChange={(v) => setForm({ ...form, ssn: v })} placeholder="900101-1234567" />
-                    <Field label="연락처 *" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="010-0000-0000" />
-                    <Field label="입사일 *" type="date" value={form.hireDate} onChange={(v) => setForm({ ...form, hireDate: v })} />
-                    <Field label="계좌번호" value={form.account} onChange={(v) => setForm({ ...form, account: v })} placeholder="은행명 및 계좌번호" />
-                    
-                    {/* 🔒 소속 매장: 자동 매칭 및 수정 불가 */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                        소속 매장 <span className="text-xs text-slate-400 font-normal">(자동 매칭 · 수정 불가)</span>
-                      </label>
-                      <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-slate-900">
-                          <Store className="w-4 h-4 text-[#EF7D25]" /> {currentStoreCode}
-                        </span>
-                        <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">
-                          고정됨
-                        </span>
-                      </div>
-                    </div>
-
-                    <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => setForm({ ...form, employmentType: v })} />
-                    
-                    {form.employmentType === "정직원" && (
-                      <>
-                        <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
-                        <Field label="부서" value={form.dept} onChange={(v) => setForm({ ...form, dept: v })} placeholder="예: 홀, 주방" />
-                      </>
-                    )}
-                  </div>
-
-                  {/* 첨부서류 */}
-                  <div className="mt-6">
-                    <div className="text-sm font-semibold text-slate-700 mb-2">첨부서류 (클릭 후 사진 첨부)</div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {DOCS.map((d) => {
-                        const fileData = form[d.key];
-                        const isAttached = Boolean(fileData);
-                        return (
-                          <label
-                            key={d.key}
-                            className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${
-                              isAttached
-                                ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-bold shadow-xs"
-                                : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"
-                            }`}
-                          >
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  try {
-                                    const compressedDataUrl = await compressImage(file);
-                                    setForm((prev) => ({ ...prev, [d.key]: compressedDataUrl }));
-                                    flash(`${d.label} 사진이 정상 첨부되었습니다!`);
-                                  } catch (err) {
-                                    flash("사진 압축 중 오류가 발생했습니다.", "error");
-                                  }
-                                }
-                              }}
-                            />
-                            {isAttached ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            ) : (
-                              <ImagePlus className="w-4 h-4 text-slate-400 shrink-0" />
-                            )}
-                            <span className="truncate">{d.label} {isAttached ? "첨부완료" : "미첨부"}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 첨부서류 하단 좌측: 퇴사일 */}
-                  <div className="mt-6 max-w-xs">
-                    <Field label="퇴사일 (입력 시 회계팀에 퇴사 알림 연동)" type="date" value={form.resignDate} onChange={(v) => setForm({ ...form, resignDate: v })} />
-                  </div>
-
-                  {formError && (
-                    <div className="mt-5 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-                      ⚠️ {formError}
-                    </div>
-                  )}
-
-                  {/* 하단 버튼 */}
-                  {editingEmpId ? (
-                    <div className="mt-7 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        className="w-1/3 bg-slate-200 hover:bg-slate-300 text-slate-800 text-lg font-bold py-4 rounded-xl transition-all cursor-pointer"
-                      >
-                        취소
-                      </button>
-                      <button
-                        type="button"
-                        onClick={submitRegister}
-                        className="w-2/3 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
-                      >
-                        수정완료
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={submitRegister}
-                      className="mt-7 w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
-                    >
-                      등록완료
-                    </button>
-                  )}
-                </div>
-
-                {/* 우측 사원등록 현황 */}
-                <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
-                    <h2 className="text-lg font-bold text-slate-900">
-                      "{currentStoreCode}" 사원 현황
-                    </h2>
-                    <span className="text-sm text-slate-500 font-semibold">총 {visibleStatusEmployees.length}명</span>
-                  </div>
-                  
-                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-                    {visibleStatusEmployees.length === 0 && (
-                      <div className="text-sm text-slate-600 p-6 border border-dashed border-slate-300 rounded-xl text-center space-y-2 bg-slate-50">
-                        <div className="font-bold text-slate-800">💡 아직 "{currentStoreCode}"에 등록된 사원이 없습니다.</div>
-                        <p className="text-xs text-slate-500">왼쪽 신규 사원 등록 폼에서 사원 정보를 입력하고 [등록완료]를 누르시면 목록에 추가됩니다.</p>
-                      </div>
-                    )}
-                    {visibleStatusEmployees.map((e) => {
-                      const isEditing = editingEmpId === e.id;
-                      return (
-                        <div
-                          key={e.id}
-                          className={`border-2 rounded-xl p-5 transition-all shadow-xs relative ${
-                            isEditing
-                              ? "border-[#EF7D25] bg-orange-50/70 ring-2 ring-orange-200"
-                              : "border-slate-200 bg-slate-50/70 hover:bg-slate-100"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <span className="font-bold text-base text-slate-900 mr-2">{e.name}</span>
-                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md">
-                                {e.employmentType}
-                              </span>
-                            </div>
-                            
-                            <button
-                              type="button"
-                              onClick={() => startEditEmployee(e)}
-                              className="text-xs bg-[#EF7D25] hover:bg-[#d96b1b] text-white font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" /> 서류첨부
-                            </button>
-                          </div>
-                          
-                          <div className="text-xs text-slate-500 mb-3">
-                            연락처: {e.phone} | 입사일: {e.hireDate}
-                          </div>
-
-                          <div className="mt-2">
-                            <GatePill employee={e} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ---------------- 🗓️ 새로 개편된 그리드형 일괄 매장 근태 입력 ---------------- */}
-            {storeTab === "attendance" && (
+  const renderAttendanceTab = () => {
+    return (
               <div className="space-y-6">
                 {/* 1. 상단 글로벌 컨트롤 바 (근무 날짜 & 근무시간 입력 방식 일괄 전환) */}
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-6">
@@ -1192,10 +1469,10 @@ export default function PayrollFlowPrototype() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-sm font-bold text-slate-700">근무시간 입력 방식 (일괄 전환):</span>
+                    <span className="text-sm font-bold text-slate-700">근무시간 입력 방식:</span>
                     <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 gap-2">
                       {[
-                        { key: "start-only", label: "⏱️ 시작만 (10h)" },
+                        { key: "start-only", label: "⏱️ 시작+10시간" },
                         { key: "start-hours", label: "🔢 시작 + 총시간" },
                         { key: "start-end", label: "⌛ 시작 + 종료시간" },
                       ].map((m) => (
@@ -1215,6 +1492,29 @@ export default function PayrollFlowPrototype() {
                     </div>
                   </div>
                 </div>
+
+                {/* 지난 날짜 안내 및 수정 제한 경고 바 */}
+                {attGlobalDate < todayStr && (
+                  <div className={`p-4 rounded-xl border flex items-center justify-between text-sm font-bold shadow-xs ${
+                    role === "store"
+                      ? "bg-rose-50 border-rose-200 text-rose-800"
+                      : "bg-amber-50 border-amber-200 text-amber-900"
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      {role === "store" ? (
+                        <>
+                          <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                          <span>🔒 지난 근태 기록 ({attGlobalDate}) 조회 중입니다. (매장 수정 불가 / 조회 전용 - 수정 필요 시 본사 회계팀 문의)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Edit3 className="w-5 h-5 text-amber-600 shrink-0" />
+                          <span>✏️ 지난 근태 기록 ({attGlobalDate}) — 본사 회계팀 수정 권한으로 작업 중 (저장 시 DB 즉각 반영됩니다).</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* 2. 좌측 인원 선택 & 우측 행 일괄 작업창 (좌우 분할 레이아웃) */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -1271,27 +1571,71 @@ export default function PayrollFlowPrototype() {
                       {/* 1. 정직원 탭 내용 (가나다순, 출근 안 해도 휴무/결근 처리 위해 전체 선택 가능) */}
                       {attTargetTab === "fulltime" && (
                         <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                          <div className="text-xs text-slate-500 mb-2 font-medium">
-                            💡 정직원은 출근을 하지 않아도 휴무/결근 기입을 위해 전원을 불러옵니다. (가나다순 정렬)
+                          <div className="text-xs text-slate-500 mb-2 font-medium flex justify-between items-center">
+                            <span>💡 출근/휴무 기입을 위해 정직원을 불러옵니다.</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedFulltimeIds.size === fulltimeEmps.length) setSelectedFulltimeIds(new Set());
+                                else setSelectedFulltimeIds(new Set(fulltimeEmps.map(e => e.id)));
+                              }}
+                              className="text-[11px] text-[#EF7D25] underline font-bold cursor-pointer"
+                            >
+                              {selectedFulltimeIds.size === fulltimeEmps.length ? "전체해제" : "전체선택"}
+                            </button>
                           </div>
                           {fulltimeEmps.length === 0 && (
                             <div className="text-xs text-slate-400 text-center py-10 border border-dashed rounded-xl">
                               등록된 정직원이 없습니다.
                             </div>
                           )}
-                          {fulltimeEmps.map((e) => (
-                            <div key={e.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-sm">
-                              <div>
-                                <span className="font-bold text-slate-900 mr-2">{e.name}</span>
-                                <span className="text-xs font-semibold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md">
-                                  {[e.dept, e.position].filter(Boolean).join(" · ") || "정직원"}
+                          {fulltimeEmps.map((e) => {
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
+                            const isChecked = selectedFulltimeIds.has(e.id);
+                            return (
+                              <label
+                                key={e.id}
+                                className={`p-3 border rounded-xl flex items-center justify-between text-sm cursor-pointer select-none transition-all ${
+                                  isChecked
+                                    ? "bg-orange-50/80 border-[#EF7D25] font-bold text-slate-900 shadow-xs"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(ev) => {
+                                      const next = new Set(selectedFulltimeIds);
+                                      if (ev.target.checked) next.add(e.id);
+                                      else next.delete(e.id);
+                                      setSelectedFulltimeIds(next);
+                                    }}
+                                    className="w-4 h-4 text-[#EF7D25] rounded focus:ring-[#EF7D25] cursor-pointer"
+                                  />
+                                  <span className="font-bold text-slate-900">{e.name}</span>
+                                  {evalRes.badges.length > 0 ? (
+                                    evalRes.badges.map((b, idx) => (
+                                      <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => openBadgeModal(e, b)}
+                                        className={`text-[11px] px-2 py-0.5 rounded-md border transition-all cursor-pointer hover:opacity-80 ${b.color}`}
+                                        title={`${b.category}: ${b.curValue}`}
+                                      >
+                                        {b.text}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 font-medium">입사: {e.hireDate}</span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                                  👔 정직원
                                 </span>
-                              </div>
-                              <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                                👔 정직원
-                              </span>
-                            </div>
-                          ))}
+                              </label>
+                            );
+                          })}
                         </div>
                       )}
 
@@ -1321,6 +1665,7 @@ export default function PayrollFlowPrototype() {
                           )}
                           {parttimeEmps.map((e) => {
                             const isChecked = selectedParttimeIds.has(e.id);
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
                             return (
                               <label
                                 key={e.id}
@@ -1330,7 +1675,7 @@ export default function PayrollFlowPrototype() {
                                     : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                                 }`}
                               >
-                                <div className="flex items-center gap-2.5">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
@@ -1343,8 +1688,22 @@ export default function PayrollFlowPrototype() {
                                     className="w-4 h-4 text-[#EF7D25] rounded focus:ring-[#EF7D25] cursor-pointer"
                                   />
                                   <span>{e.name}</span>
+                                  {evalRes.badges.map((b, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        ev.preventDefault();
+                                        openBadgeModal(e, b);
+                                      }}
+                                      className={`text-[11px] px-2 py-0.5 rounded-md border transition-all cursor-pointer hover:opacity-80 ${b.color}`}
+                                      title={`${b.category}: ${b.curValue}`}
+                                    >
+                                      {b.text}
+                                    </button>
+                                  ))}
                                 </div>
-                                <span className="text-xs font-semibold text-slate-500">입사: {e.hireDate}</span>
                               </label>
                             );
                           })}
@@ -1377,6 +1736,7 @@ export default function PayrollFlowPrototype() {
                           )}
                           {dailyEmps.map((e) => {
                             const isChecked = selectedDailyIds.has(e.id);
+                            const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig);
                             return (
                               <label
                                 key={e.id}
@@ -1386,7 +1746,7 @@ export default function PayrollFlowPrototype() {
                                     : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                                 }`}
                               >
-                                <div className="flex items-center gap-2.5">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
@@ -1399,8 +1759,23 @@ export default function PayrollFlowPrototype() {
                                     className="w-4 h-4 text-[#EF7D25] rounded focus:ring-[#EF7D25] cursor-pointer"
                                   />
                                   <span>{e.name}</span>
+                                  {evalRes.badges.map((b, idx) => (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+                                        ev.preventDefault();
+                                        openBadgeModal(e, b);
+                                      }}
+                                      className={`text-[11px] px-2 py-0.5 rounded-md border transition-all cursor-pointer hover:opacity-80 ${b.color}`}
+                                      title={`${b.category}: ${b.curValue}`}
+                                    >
+                                      {b.text}
+                                    </button>
+                                  ))}
                                 </div>
-                                <span className="text-xs font-semibold text-slate-500">일용직</span>
+                                <span className="text-xs font-semibold text-slate-500 shrink-0">일용직</span>
                               </label>
                             );
                           })}
@@ -1411,36 +1786,61 @@ export default function PayrollFlowPrototype() {
                     {/* 하단 고정 가져오기 버튼 */}
                     <div className="pt-4 border-t border-slate-100">
                       {attTargetTab === "fulltime" && (
-                        <button
-                          type="button"
-                          onClick={importAllFulltime}
-                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
-                        >
-                          <ArrowRightCircle className="w-4 h-4" />
-                          정직원 전체 가져오기 ({fulltimeEmps.length}명 ➔ 작업창)
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={importSelectedFulltime}
+                            disabled={selectedFulltimeIds.size === 0}
+                            className="flex-1 bg-white text-[#EF7D25] border-2 border-[#EF7D25] hover:bg-orange-50 text-sm font-extrabold py-3.5 rounded-xl shadow-sm disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            선택 가져오기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={importAllFulltime}
+                            className="flex-1 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            정직원 전체가져오기
+                          </button>
+                        </div>
                       )}
                       {attTargetTab === "parttime" && (
-                        <button
-                          type="button"
-                          onClick={importSelectedParttime}
-                          disabled={selectedParttimeIds.size === 0}
-                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md disabled:opacity-40 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                        >
-                          <ArrowRightCircle className="w-4 h-4" />
-                          선택한 아르바이트 가져오기 ({selectedParttimeIds.size}명 ➔ 작업창)
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={importSelectedParttime}
+                            disabled={selectedParttimeIds.size === 0}
+                            className="flex-1 bg-white text-[#EF7D25] border-2 border-[#EF7D25] hover:bg-orange-50 text-sm font-extrabold py-3.5 rounded-xl shadow-sm disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            선택 가져오기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={importAllParttime}
+                            className="flex-1 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            알바 전체가져오기
+                          </button>
+                        </div>
                       )}
                       {attTargetTab === "daily" && (
-                        <button
-                          type="button"
-                          onClick={importSelectedDaily}
-                          disabled={selectedDailyIds.size === 0}
-                          className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md disabled:opacity-40 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                        >
-                          <ArrowRightCircle className="w-4 h-4" />
-                          선택한 일용직 가져오기 ({selectedDailyIds.size}명 ➔ 작업창)
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={importSelectedDaily}
+                            disabled={selectedDailyIds.size === 0}
+                            className="flex-1 bg-white text-[#EF7D25] border-2 border-[#EF7D25] hover:bg-orange-50 text-sm font-extrabold py-3.5 rounded-xl shadow-sm disabled:opacity-40 transition-all cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            선택 가져오기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={importAllDaily}
+                            className="flex-1 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold py-3.5 rounded-xl shadow-md flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            일용직 전체가져오기
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1462,7 +1862,10 @@ export default function PayrollFlowPrototype() {
                         {loadedRows.length > 0 && (
                           <button
                             type="button"
-                            onClick={() => setLoadedRows([])}
+                            onClick={() => {
+                              if (!checkEditPermission()) return;
+                              setLoadedRows([]);
+                            }}
                             className="text-xs text-rose-600 hover:text-rose-800 font-bold bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg transition-all cursor-pointer"
                           >
                             작업창 전체 비우기
@@ -1605,8 +2008,21 @@ export default function PayrollFlowPrototype() {
                                       )}
 
                                       {row.mode === "start-only" && (
-                                        <div className="text-xs font-bold bg-slate-200 text-slate-700 px-3 py-2 rounded-xl">
-                                          ✅ 출근 체크 모드 (기본 10시간 정산)
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="time"
+                                            value={row.start}
+                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                          />
+                                          <input
+                                            type="number"
+                                            placeholder="총 시간(h)"
+                                            value={row.hours !== undefined ? row.hours : 10}
+                                            onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
+                                            className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                          />
+                                          <span className="text-xs font-bold text-slate-600">시간</span>
                                         </div>
                                       )}
 
@@ -1614,14 +2030,17 @@ export default function PayrollFlowPrototype() {
                                       {isParttime && (
                                         <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                                           <span className="text-xs font-bold text-slate-600">휴식시간:</span>
-                                          <input
-                                            type="number"
-                                            placeholder="분(min)"
-                                            value={row.breakMinutes}
-                                            onChange={(e) => updateRow(row.rowId, "breakMinutes", e.target.value)}
-                                            className="w-16 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-extrabold text-slate-900 text-center"
-                                          />
-                                          <span className="text-xs font-bold text-slate-500">분</span>
+                                          <select
+                                            value={row.breakMinutes ?? 60}
+                                            onChange={(e) => updateRow(row.rowId, "breakMinutes", Number(e.target.value))}
+                                            className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-extrabold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#EF7D25]"
+                                          >
+                                            <option value={0}>0분</option>
+                                            <option value={30}>30분</option>
+                                            <option value={60}>60분</option>
+                                            <option value={90}>90분</option>
+                                            <option value={120}>120분</option>
+                                          </select>
                                         </div>
                                       )}
 
@@ -1654,11 +2073,10 @@ export default function PayrollFlowPrototype() {
                       <button
                         type="button"
                         onClick={saveAllLoadedRows}
-                        disabled={loadedRows.length === 0}
-                        className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-black py-4 rounded-xl shadow-lg disabled:opacity-40 flex items-center justify-center gap-2.5 transition-all cursor-pointer"
+                        className="w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-black py-4 rounded-xl shadow-lg flex items-center justify-center gap-2.5 transition-all cursor-pointer"
                       >
                         <Save className="w-5 h-5" />
-                        로드된 전체 인원 근태 일괄 저장 ({loadedRows.length}명 ➔ Firestore)
+                        {loadedRows.length}명 저장하기
                       </button>
                     </div>
                   </div>
@@ -1687,7 +2105,438 @@ export default function PayrollFlowPrototype() {
                   </div>
                 </div>
               </div>
+    );
+  };
+
+  return (
+    <div className="w-full min-h-screen bg-[#F1F5F9] text-slate-800 antialiased pb-16" style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif" }}>
+      {/* 0. 로그인 계정 / 매장 로그인 아이디 분석 시뮬레이션 바 */}
+      <div className="bg-slate-900 text-slate-200 px-8 py-2 flex flex-wrap items-center justify-between text-xs sm:text-sm font-semibold border-b border-slate-800">
+        <div className="flex items-center gap-2">
+          <Key className="w-4 h-4 text-[#EF7D25]" />
+          <span>로그인 계정 권한 구분 시뮬레이션:</span>
+          <select
+            value={currentUserRole === "store" ? `store:${currentStoreCode}` : currentUserRole}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val.startsWith("store:")) {
+                const sCode = val.split(":")[1];
+                setCurrentUserRole("store");
+                setCurrentStoreCode(sCode);
+                setRole("store");
+              } else {
+                setCurrentUserRole(val);
+                setRole(val);
+                if (val === "hr") setHrSubtab("confirm");
+              }
+            }}
+            className="bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-1 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-[#EF7D25]"
+          >
+            <option value="accounting">🏛️ 회계팀 계정 (전체 회계 및 매장관리)</option>
+            <option value="hr">💼 인사팀 계정 (전체 인사 승인)</option>
+            {storeList.map((st) => (
+              <option key={st.id || st.code} value={`store:${st.name}`}>
+                🏪 {st.name} 매장 전용 계정 로그인
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="text-slate-400 text-xs">
+          현재 로그인: <strong className="text-white">{currentUserRole === "accounting" ? "회계팀" : currentUserRole === "hr" ? "인사팀" : `🏪 "${currentStoreCode}" 매장 계정`}</strong>
+        </div>
+      </div>
+
+      {/* 1. 상단 헤더 바 */}
+      <header className="bg-[#EF7D25] text-white px-8 py-5 flex items-center justify-between shadow-md">
+        <div className="text-2xl sm:text-3xl font-black tracking-widest text-white select-none">
+          SWAGBERRY
+        </div>
+        {employees.length === 0 && !loading && (
+          <button
+            onClick={seedDemoData}
+            className="text-sm bg-white hover:bg-slate-100 text-[#EF7D25] font-extrabold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4 text-[#EF7D25]" /> 샘플 데이터 복구
+          </button>
+        )}
+      </header>
+
+      {/* 2. 상단 네비게이션 탭 */}
+      <nav className="bg-white border-b border-slate-200/90 px-8 py-3 flex flex-wrap items-center gap-2.5 shadow-xs">
+        {/* 1. 회계팀 탭 */}
+        {(currentUserRole === "accounting" || role === "accounting" || role === "accounting_dashboard") && (
+          <button
+            onClick={() => setRole("accounting")}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "accounting"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <Landmark className="w-5 h-5 text-[#EF7D25]" />
+            <span>회계팀</span>
+            {(waitingAccounting.length + pendingResignations.length + suspectedResignations.length) > 0 && (
+              <span className="ml-1 bg-[#EF7D25] text-white text-xs font-extrabold rounded-full px-2 py-0.5 shadow-xs">
+                {waitingAccounting.length + pendingResignations.length + suspectedResignations.length}
+              </span>
             )}
+          </button>
+        )}
+
+        {/* 2. 📊 회계팀 대시보드 탭 (간소화 명칭) */}
+        {(currentUserRole === "accounting" || role === "accounting" || role === "accounting_dashboard") && (
+          <button
+            onClick={() => setRole("accounting_dashboard")}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "accounting_dashboard"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
+            <span>회계팀 대시보드</span>
+            {unreadAccountingIssuesCount > 0 && (
+              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
+                {unreadAccountingIssuesCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* 3. 인사팀 탭 */}
+        {(currentUserRole === "hr" || role === "hr") && (
+          <button
+            onClick={() => { setRole("hr"); setHrSubtab("confirm"); }}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "hr" && hrSubtab === "confirm"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <Briefcase className="w-5 h-5 text-emerald-600" />
+            <span>인사팀</span>
+            {(waitingHr.length + waitingAccounting.length) > 0 && (
+              <span className="ml-1 bg-emerald-600 text-white text-xs font-extrabold rounded-full px-2 py-0.5 shadow-xs">
+                {waitingHr.length + waitingAccounting.length}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* 4. 📊 인사팀 대시보드 탭 (회계팀 대시보드와 동일하게 상단 네비에 배치) */}
+        {(currentUserRole === "hr" || role === "hr") && (
+          <button
+            onClick={() => { setRole("hr"); setHrSubtab("dashboard"); }}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "hr" && hrSubtab === "dashboard"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5 text-emerald-600" />
+            <span>인사팀 대시보드</span>
+            {unreadHrIssuesCount > 0 && (
+              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
+                {unreadHrIssuesCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* 5. 매장 계정용 매장 관리 탭 */}
+        {(currentUserRole === "store" || role === "store") && (
+          <button
+            onClick={() => setRole("store")}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "store"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <Store className="w-5 h-5 text-slate-700" />
+            <span>매장 관리</span>
+          </button>
+        )}
+
+        {/* 6. 🏪 매장 대시보드 탭 (매장 계정 전용) */}
+        {(currentUserRole === "store" || role === "hq") && (
+          <button
+            onClick={() => setRole("hq")}
+            className={`flex items-center gap-2 px-5 py-2.5 text-base font-bold rounded-xl transition-all cursor-pointer ${
+              role === "hq"
+                ? "border-2 border-[#EF7D25] text-[#EF7D25] bg-orange-50/60 shadow-xs"
+                : "border-2 border-transparent text-slate-700 hover:text-slate-900 hover:bg-slate-100/70"
+            }`}
+          >
+            <LayoutDashboard className="w-5 h-5 text-indigo-600" />
+            <span>매장 대시보드</span>
+            {unreadStoreIssuesCount > 0 && (
+              <span className="ml-1 bg-rose-600 text-white text-xs font-extrabold rounded-full px-2.5 py-0.5 shadow-xs animate-pulse">
+                {unreadStoreIssuesCount}
+              </span>
+            )}
+          </button>
+        )}
+      </nav>
+
+      {/* 3. 메인 콘텐츠 영역 */}
+      <main className="max-w-[1400px] mx-auto p-6 md:p-8 mt-2">
+        {/* ---------------- 1. 매장 화면 (해당 로그인 매장의 데이터만 독립 연동) ---------------- */}
+        {role === "store" && (
+          <div>
+            {/* 로그인 매장 고정 배너 */}
+            <div className="flex flex-wrap items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-xs mb-6 gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-[#EF7D25] shrink-0">
+                  <Store className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xl font-black text-slate-900">
+                      <span className="text-[#EF7D25] mr-1.5">[{currentStoreObj.code || "STR"}]</span>
+                      {currentStoreObj.name}
+                    </h2>
+                    <span className="text-xs bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-md">
+                      🔒 해당 매장 데이터 전용 연동됨
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 mt-1">
+                    <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {currentStoreObj.address || "주소 미입력"}</span>
+                    <span>|</span>
+                    <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {currentStoreObj.phone || "전화번호 미입력"}</span>
+                    <span>|</span>
+                    <span className="flex items-center gap-1"><FileText className="w-3.5 h-3.5 text-slate-400" /> 사업자번호: {currentStoreObj.businessNumber || "-"}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
+                소속 직원: <strong className="text-[#EF7D25] text-sm font-black ml-1">{currentStoreEmployees.length}명</strong>
+              </div>
+            </div>
+
+            {/* 서브탭 버튼 */}
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => setStoreTab("attendance")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer ${
+                  storeTab === "attendance"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                근태입력
+              </button>
+              <button
+                onClick={() => setStoreTab("register")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer ${
+                  storeTab === "register"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                사원등록
+              </button>
+            </div>
+
+            {storeTab === "register" && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* 왼쪽 사원 등록 폼 (소속 매장은 자동 지정되며 수정 불가) */}
+                <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
+                  <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                      {editingEmpId ? <Edit3 className="w-5 h-5 text-[#EF7D25]" /> : <UserPlus className="w-5 h-5 text-[#EF7D25]" />}
+                      <h2>{editingEmpId ? `✏️ "${form.name}" 사원 서류 보완 및 수정` : "신규 사원 등록"}</h2>
+                    </div>
+                  </div>
+
+                  {editingEmpId && (
+                    <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-3.5 text-sm font-semibold text-[#EF7D25]">
+                      💡 <strong>"{form.name}"</strong> 사원의 기존 정보가 로드되었습니다. 수정 후 하단 [수정완료] 버튼을 누르세요.
+                    </div>
+                  )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-base">
+                    <Field label="성명 *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="예: 홍길동" />
+                    <Field label="주민등록번호 *" value={form.ssn} onChange={(v) => setForm({ ...form, ssn: v })} placeholder="900101-1234567" />
+                    <Field label="연락처 *" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="010-0000-0000" />
+                    <Field label="입사일 *" type="date" value={form.hireDate} onChange={(v) => setForm({ ...form, hireDate: v })} />
+                    <Field label="계좌번호" value={form.account} onChange={(v) => setForm({ ...form, account: v })} placeholder="은행명 및 계좌번호" />
+                    
+                    {/* 🔒 소속 매장: 자동 매칭 및 수정 불가 */}
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                        소속 매장 <span className="text-xs text-slate-400 font-normal">(자동 매칭 · 수정 불가)</span>
+                      </label>
+                      <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-slate-900">
+                          <Store className="w-4 h-4 text-[#EF7D25]" /> {currentStoreCode}
+                        </span>
+                        <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">
+                          고정됨
+                        </span>
+                      </div>
+                    </div>
+
+                    <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => setForm({ ...form, employmentType: v })} />
+                    
+                    {form.employmentType === "정직원" && (
+                      <>
+                        <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
+                        <Field label="부서" value={form.dept} onChange={(v) => setForm({ ...form, dept: v })} placeholder="예: 홀, 주방" />
+                      </>
+                    )}
+                  </div>
+
+                  {/* 첨부서류 */}
+                  <div className="mt-6">
+                    <div className="text-sm font-semibold text-slate-700 mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span>첨부서류 (클릭 후 사진 첨부)</span>
+                      <span className="text-rose-500 font-bold text-[11px] sm:text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">※ 등록 후 30일 경과 시 자동 파기</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {DOCS.map((d) => {
+                        const fileData = form[d.key];
+                        const isAttached = Boolean(fileData);
+                        return (
+                          <label
+                            key={d.key}
+                            className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${
+                              isAttached
+                                ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-bold shadow-xs"
+                                : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"
+                            }`}
+                          >
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  try {
+                                    const compressedDataUrl = await compressImage(file);
+                                    setForm((prev) => ({ ...prev, [d.key]: compressedDataUrl }));
+                                    flash(`${d.label} 사진이 정상 첨부되었습니다!`);
+                                  } catch (err) {
+                                    flash("사진 압축 중 오류가 발생했습니다.", "error");
+                                  }
+                                }
+                              }}
+                            />
+                            {isAttached ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <ImagePlus className="w-4 h-4 text-slate-400 shrink-0" />
+                            )}
+                            <span className="truncate">{d.label} {isAttached ? "첨부완료" : "미첨부"}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* 첨부서류 하단 좌측: 퇴사일 */}
+                  <div className="mt-6 max-w-xs">
+                    <Field label="퇴사일 (입력 시 회계팀에 퇴사 알림 연동)" type="date" value={form.resignDate} onChange={(v) => setForm({ ...form, resignDate: v })} />
+                  </div>
+
+                  {formError && (
+                    <div className="mt-5 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
+                      ⚠️ {formError}
+                    </div>
+                  )}
+
+                  {/* 하단 버튼 */}
+                  {editingEmpId ? (
+                    <div className="mt-7 flex gap-3">
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="w-1/3 bg-slate-200 hover:bg-slate-300 text-slate-800 text-lg font-bold py-4 rounded-xl transition-all cursor-pointer"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitRegister}
+                        className="w-2/3 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
+                      >
+                        수정완료
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={submitRegister}
+                      className="mt-7 w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
+                    >
+                      등록완료
+                    </button>
+                  )}
+                </div>
+
+                {/* 우측 사원등록 현황 */}
+                <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
+                  <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
+                    <h2 className="text-lg font-bold text-slate-900">
+                      "{currentStoreCode}" 사원 현황
+                    </h2>
+                    <span className="text-sm text-slate-500 font-semibold">총 {visibleStatusEmployees.length}명</span>
+                  </div>
+                  
+                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+                    {visibleStatusEmployees.length === 0 && (
+                      <div className="text-sm text-slate-600 p-6 border border-dashed border-slate-300 rounded-xl text-center space-y-2 bg-slate-50">
+                        <div className="font-bold text-slate-800">💡 아직 "{currentStoreCode}"에 등록된 사원이 없습니다.</div>
+                        <p className="text-xs text-slate-500">왼쪽 신규 사원 등록 폼에서 사원 정보를 입력하고 [등록완료]를 누르시면 목록에 추가됩니다.</p>
+                      </div>
+                    )}
+                    {visibleStatusEmployees.map((e) => {
+                      const isEditing = editingEmpId === e.id;
+                      return (
+                        <div
+                          key={e.id}
+                          className={`border-2 rounded-xl p-5 transition-all shadow-xs relative ${
+                            isEditing
+                              ? "border-[#EF7D25] bg-orange-50/70 ring-2 ring-orange-200"
+                              : "border-slate-200 bg-slate-50/70 hover:bg-slate-100"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div>
+                              <span className="font-bold text-base text-slate-900 mr-2">{e.name}</span>
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md">
+                                {e.employmentType}
+                              </span>
+                            </div>
+                            
+                            <button
+                              type="button"
+                              onClick={() => startEditEmployee(e)}
+                              className="text-xs bg-[#EF7D25] hover:bg-[#d96b1b] text-white font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" /> 서류첨부
+                            </button>
+                          </div>
+                          
+                          <div className="text-xs text-slate-500 mb-3">
+                            연락처: {e.phone} | 입사일: {e.hireDate}
+                          </div>
+
+                          <div className="mt-2">
+                            <GatePill employee={e} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 🗓️ 새로 개편된 그리드형 일괄 매장 근태 입력 ---------------- */}
+            {storeTab === "attendance" && renderAttendanceTab()}
           </div>
         )}
 
@@ -1703,12 +2552,56 @@ export default function PayrollFlowPrototype() {
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                <span>사원등록 확인</span>
-                {(waitingAccounting.length + pendingResignations.length) > 0 && (
+                <UserPlus className="w-4 h-4" />
+                <span>사원등록/퇴사 관리</span>
+                {(waitingAccounting.length + pendingResignations.length + suspectedResignations.length) > 0 && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
                     accountingSubtab === "confirm" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
                   }`}>
-                    {waitingAccounting.length + pendingResignations.length}
+                    {waitingAccounting.length + pendingResignations.length + suspectedResignations.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("attendance")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "attendance"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>근태 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("employees")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "employees"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>직원 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("labor")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "labor"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Sliders className="w-4 h-4" />
+                <span>아르바이트 수당 관리</span>
+                {actionableLaborEmps.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
+                    accountingSubtab === "labor" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
+                  }`}>
+                    {actionableLaborEmps.length}
                   </span>
                 )}
               </button>
@@ -1729,6 +2622,60 @@ export default function PayrollFlowPrototype() {
             {/* 서브탭 1: 사원등록 확인 목록 (회계 담당: 주민등록증/통장사본 및 주민번호/계좌 대조) */}
             {accountingSubtab === "confirm" && (
               <div className="max-w-4xl mx-auto space-y-8">
+                {/* 🏛️ 신규 입사 사원 회계팀 확인 대기 목록 (상단) */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
+                  <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-2">
+                    <Landmark className="w-6 h-6 text-[#EF7D25]" />
+                    <h2>회계팀 확인 대기 목록 (게이트 1단계)</h2>
+                  </div>
+                  <p className="text-sm text-slate-500 mb-6">
+                    🔍 <strong>회계 전용 확인</strong>: 첨부된 사진(주민등록증, 통장사본) 확인 후 [회계팀 승인]을 클릭하세요. 승인 시 계좌번호를 제외한 정보가 인사팀으로 전송됩니다.
+                  </p>
+                  
+                  <div className="space-y-4">
+                    {waitingAccounting.length === 0 && (
+                      <div className="text-base text-slate-500 p-8 border border-dashed border-slate-300 rounded-xl text-center">
+                        현재 회계팀 확인 대기 중인 입사 사원이 없습니다.
+                      </div>
+                    )}
+                    {waitingAccounting.map((e) => (
+                      <div key={e.id} className="border border-slate-200 rounded-xl p-5 bg-slate-50/50 hover:bg-slate-50 transition-all shadow-xs">
+                        <div className="flex flex-wrap justify-between items-start gap-4">
+                          <div className="space-y-1.5 text-base">
+                            <div className="font-bold text-lg text-slate-900">
+                              {e.name} <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType} · {e.storeCode}</span>
+                            </div>
+                            <div className="text-sm font-medium text-slate-600">
+                              연락처: {e.phone}
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-3 pt-2">
+                              <DocChip ok={e.idCard} label="주민등록증" employeeName={e.name} />
+                              <DocChip ok={e.bankbook} label="통장사본" employeeName={e.name} />
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (!e.idCard || !e.bankbook) {
+                                alert("필요 서류(주민등록증, 통장사본)가 모두 필요합니다.");
+                                return;
+                              }
+                              confirmAccounting(e.id);
+                            }}
+                            className={`flex items-center gap-1.5 text-white text-sm font-bold px-5 py-3.5 rounded-xl shadow-md transition-all ${
+                              (e.idCard && e.bankbook)
+                                ? "bg-[#EF7D25] hover:bg-[#d96b1b] cursor-pointer"
+                                : "bg-slate-300 cursor-not-allowed"
+                            }`}
+                          >
+                            <Check className="w-4 h-4" /> 회계 승인 (대조 완료 ➔ 인사팀 전달)
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 {/* 🚨 퇴사자 발생 확인 알림 카드 목록 */}
                 {pendingResignations.length > 0 && (
                   <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
@@ -1764,52 +2711,50 @@ export default function PayrollFlowPrototype() {
                   </div>
                 )}
 
-                {/* 🏛️ 신규 입사 사원 회계팀 확인 대기 목록 */}
-                <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
-                  <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-2">
-                    <Landmark className="w-6 h-6 text-[#EF7D25]" />
-                    <h2>회계팀 확인 대기 목록 (게이트 1단계)</h2>
-                  </div>
-                  <p className="text-sm text-slate-500 mb-6">
-                    🔍 <strong>회계 전용 무마스킹</strong>: 실시간 주민번호·계좌번호 숫자를 사진과 100% 대조한 뒤 [회계팀 승인]을 클릭하세요. 승인 시 계좌번호를 제외한 정보가 인사팀으로 전송됩니다.
-                  </p>
-                  
-                  <div className="space-y-4">
-                    {waitingAccounting.length === 0 && (
-                      <div className="text-base text-slate-500 p-8 border border-dashed border-slate-300 rounded-xl text-center">
-                        현재 회계팀 확인 대기 중인 입사 사원이 없습니다.
-                      </div>
-                    )}
-                    {waitingAccounting.map((e) => (
-                      <div key={e.id} className="border border-slate-200 rounded-xl p-5 bg-slate-50/50 hover:bg-slate-50 transition-all shadow-xs">
-                        <div className="flex flex-wrap justify-between items-start gap-4">
-                          <div className="space-y-1.5 text-base">
-                            <div className="font-bold text-lg text-slate-900">
-                              {e.name} <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType} · {e.storeCode}</span>
+                {/* 🚨 2주 이상 무단 결근 (퇴직 의심자) 알림 배너 (하단) */}
+                {suspectedResignations.length > 0 && (
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 text-lg font-bold text-amber-800 border-b border-amber-200 pb-3">
+                      <AlertTriangle className="w-5.5 h-5.5 text-amber-600" />
+                      <h2>🚨 2주 이상 장기 미출근 (퇴직 의심) 알림 ({suspectedResignations.length}명)</h2>
+                    </div>
+                    <p className="text-xs text-amber-700">마지막 출근일 또는 입사일로부터 14일 이상 출근 기록이 없는 정직원/아르바이트 명단입니다.</p>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {suspectedResignations.map((e) => (
+                        <div key={e.id} className="relative bg-white border border-amber-300 rounded-xl p-4 flex flex-col justify-between gap-4 shadow-xs">
+                          {/* 닫기(알림 무시) 버튼 */}
+                          <button
+                            onClick={() => setDismissedSuspectedAlerts([...dismissedSuspectedAlerts, e.id])}
+                            className="absolute top-2 right-2 p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
+                            title="처리 완료 혹은 무시 (알림 닫기)"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+
+                          <div className="space-y-1 mt-1 pr-6">
+                            <div className="text-base font-bold text-slate-900 leading-tight">
+                              <span className="text-amber-700 mr-2">[{e.storeCode}]</span>
+                              {e.name}
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2 inline-block mt-1 sm:mt-0">{e.employmentType}</span>
                             </div>
-                            <div className="text-sm font-bold text-slate-800 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg inline-block">
-                              🔍 주민등록번호 (대조용): <span className="text-[#EF7D25] font-black">{e.ssn || "-"}</span> | 연락처: {e.phone}
-                            </div>
-                            <div className="text-sm font-bold text-slate-800 bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg block">
-                              💳 계좌번호 (대조용): {e.account ? <span className="font-black text-slate-900">{e.account}</span> : <span className="text-rose-600 font-extrabold">미기재</span>}
-                            </div>
-                            
-                            <div className="flex flex-wrap gap-3 pt-2">
-                              <DocChip ok={e.idCard} label="주민등록증" employeeName={e.name} />
-                              <DocChip ok={e.bankbook} label="통장사본" employeeName={e.name} />
+                            <div className="text-sm text-slate-600 font-medium pt-1">
+                              입사일: <strong className="text-slate-900">{e.hireDate}</strong>
                             </div>
                           </div>
+                          
                           <button
-                            onClick={() => confirmAccounting(e.id)}
-                            className="flex items-center gap-1.5 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-bold px-5 py-3.5 rounded-xl shadow-md transition-all cursor-pointer"
+                            onClick={() => setSelectedEmpProfile(e)}
+                            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
                           >
-                            <Check className="w-4 h-4" /> 회계 승인 (대조 완료 ➔ 인사팀 전달)
+                            <UserCheck className="w-4 h-4" />
+                            프로필 열람
                           </button>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             )}
 
@@ -1975,6 +2920,695 @@ export default function PayrollFlowPrototype() {
                       );
                     })}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* 서브탭 4: 🏢 회계팀 전체 근태 관리 */}
+            {accountingSubtab === "attendance" && (
+              <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
+                  <div className="flex items-center gap-4 mb-6">
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      <Store className="w-6 h-6 text-[#EF7D25]" />
+                      매장 선택
+                    </h2>
+                    <select
+                      value={currentStoreCode}
+                      onChange={(e) => setCurrentStoreCode(e.target.value)}
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
+                    >
+                      {storeList.map(s => (
+                        <option key={s.code} value={s.name}>{s.name}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-slate-500 font-semibold ml-2">
+                      선택한 매장의 근태 데이터를 열람/수정합니다. (회계 권한)
+                    </span>
+                  </div>
+                  
+                  {renderAttendanceTab()}
+                </div>
+              </div>
+            )}
+
+            {/* 서브탭 3: ⚖️ 근로조건 관리 (아르바이트 항목별 이슈현황 보드판 + 수치적 Config 관리) */}
+            {accountingSubtab === "labor" && (
+              <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-200">
+                {/* 🚨 퇴직금 확정 사원 발생 알림 배너 (회계팀 연동) */}
+                {confirmedSeveranceEmps.length > 0 && (
+                  <div className="bg-gradient-to-r from-orange-500 to-amber-600 rounded-2xl p-6 text-white shadow-lg space-y-3">
+                    <div className="flex items-center justify-between border-b border-white/20 pb-3">
+                      <div className="flex items-center gap-2 text-lg font-black">
+                        <AlertTriangle className="w-6 h-6 text-yellow-300 animate-bounce" />
+                        <h2>🚨 아르바이트 퇴직금 발생 확정 알림 ({confirmedSeveranceEmps.length}건) — 회계팀 정산 처리 필요</h2>
+                      </div>
+                      <span className="text-xs bg-white/20 px-3 py-1 rounded-full font-bold">
+                        회계팀 자동 수신 알림
+                      </span>
+                    </div>
+                    <p className="text-sm opacity-90 font-medium">
+                      입사 후 만 1년(근속 1년 + 주 15시간 이상)에 도달한 사원입니다. 정산 처리 후 알림 상태를 확인하세요.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+                      {confirmedSeveranceEmps.map(({ emp, evalRes }) => (
+                        <div key={emp.id} className="bg-white/10 backdrop-blur-xs border border-white/20 rounded-xl p-3 flex justify-between items-center text-sm">
+                          <div>
+                            <span className="font-bold">{emp.name}</span>
+                            <span className="text-xs ml-2 opacity-80">({emp.storeCode})</span>
+                            <div className="text-xs text-yellow-200 mt-0.5">{evalRes.severanceBadge?.curValue}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openBadgeModal(emp, evalRes.severanceBadge)}
+                            className="text-xs bg-white text-orange-600 hover:bg-orange-50 font-bold px-3 py-1.5 rounded-lg shadow-xs cursor-pointer"
+                          >
+                            정산 안내
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 1. 요약 통계 카드 3개 */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
+                    <div className="flex justify-between items-center text-slate-500 text-xs font-bold">
+                      <span>💡 주휴수당 이슈 현황</span>
+                      <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md border border-blue-200">주 15시간 기준</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 flex items-baseline gap-2">
+                      <span>
+                        {allLaborEvaluations.filter((x) => x.evalRes.weeklyBadge).length}명
+                      </span>
+                      <span className="text-xs text-amber-600 font-semibold">
+                        (2단계 이상: {allLaborEvaluations.filter((x) => x.evalRes.weeklyBadge?.levelNum >= 2).length}명)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
+                    <div className="flex justify-between items-center text-slate-500 text-xs font-bold">
+                      <span>🛡️ 4대보험 이슈 현황</span>
+                      <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md border border-purple-200">월 60시간/8일 기준</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 flex items-baseline gap-2">
+                      <span>
+                        {allLaborEvaluations.filter((x) => x.evalRes.insuranceBadge).length}명
+                      </span>
+                      <span className="text-xs text-amber-600 font-semibold">
+                        (2단계 이상: {allLaborEvaluations.filter((x) => x.evalRes.insuranceBadge?.levelNum >= 2).length}명)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-2">
+                    <div className="flex justify-between items-center text-slate-500 text-xs font-bold">
+                      <span>💰 퇴직금 이슈 현황</span>
+                      <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md border border-emerald-200">입사 만 1년 기준</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 flex items-baseline gap-2">
+                      <span>
+                        {allLaborEvaluations.filter((x) => x.evalRes.severanceBadge).length}명
+                      </span>
+                      <span className="text-xs text-amber-600 font-semibold">
+                        (2단계 이상: {allLaborEvaluations.filter((x) => x.evalRes.severanceBadge?.levelNum >= 2).length}명)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. 아르바이트/전사원 항목별 이슈현황 보드판 */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                    <div>
+                      <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                        <Sliders className="w-5 h-5 text-[#EF7D25]" />
+                        아르바이트 항목별 이슈현황 보드판
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-1">
+                        인원 불러오기 화면의 뱃지 데이터와 동일 소스로 실시간 연동되며 항목별/단계별 이슈 인원을 모니터링합니다.
+                      </p>
+                    </div>
+
+                    {/* 해결 방안 제안 대상 (2단계 이상) 필터링 토글 */}
+                    <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setLaborBoardFilter("all")}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                          laborBoardFilter === "all"
+                            ? "bg-white text-slate-900 shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        전체 보기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLaborBoardFilter("actionable")}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1 ${
+                          laborBoardFilter === "actionable"
+                            ? "bg-[#EF7D25] text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <span>⚡ 해결 방안 제안 대상 (2단계 이상만)</span>
+                        <span className="ml-1 bg-white/20 text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                          {actionableLaborEmps.length}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3개 항목별 카테고리 그리드 리스트 */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* [카테고리 1: 주휴수당] */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                        <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>💡 주휴수당 이슈</span>
+                        </h3>
+                        <span className="text-xs text-slate-500 font-semibold">
+                          {
+                            allLaborEvaluations.filter((x) => {
+                              if (!x.evalRes.weeklyBadge) return false;
+                              if (laborBoardFilter === "actionable") return x.evalRes.weeklyBadge.levelNum >= 2;
+                              return true;
+                            }).length
+                          }명
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                        {allLaborEvaluations
+                          .filter((x) => {
+                            if (!x.evalRes.weeklyBadge) return false;
+                            if (laborBoardFilter === "actionable") return x.evalRes.weeklyBadge.levelNum >= 2;
+                            return true;
+                          })
+                          .map(({ emp, evalRes }) => {
+                            const b = evalRes.weeklyBadge;
+                            return (
+                              <div key={emp.id} className="bg-white border border-slate-200 rounded-xl p-3 text-xs space-y-2 shadow-2xs hover:border-orange-300 transition-all">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-900 text-sm">{emp.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openBadgeModal(emp, b)}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border cursor-pointer hover:opacity-80 ${b.color}`}
+                                  >
+                                    {b.text}
+                                  </button>
+                                </div>
+                                <div className="text-slate-600 font-medium">수치: {b.curValue}</div>
+                                {b.resolution && (
+                                  <div className="bg-orange-50 text-orange-900 p-2 rounded-lg text-[11px] font-semibold border border-orange-200">
+                                    "{b.resolution}"
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    {/* [카테고리 2: 4대보험] */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                        <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>🛡️ 4대보험 이슈</span>
+                        </h3>
+                        <span className="text-xs text-slate-500 font-semibold">
+                          {
+                            allLaborEvaluations.filter((x) => {
+                              if (!x.evalRes.insuranceBadge) return false;
+                              if (laborBoardFilter === "actionable") return x.evalRes.insuranceBadge.levelNum >= 2;
+                              return true;
+                            }).length
+                          }명
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                        {allLaborEvaluations
+                          .filter((x) => {
+                            if (!x.evalRes.insuranceBadge) return false;
+                            if (laborBoardFilter === "actionable") return x.evalRes.insuranceBadge.levelNum >= 2;
+                            return true;
+                          })
+                          .map(({ emp, evalRes }) => {
+                            const b = evalRes.insuranceBadge;
+                            return (
+                              <div key={emp.id} className="bg-white border border-slate-200 rounded-xl p-3 text-xs space-y-2 shadow-2xs hover:border-orange-300 transition-all">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-900 text-sm">{emp.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openBadgeModal(emp, b)}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border cursor-pointer hover:opacity-80 ${b.color}`}
+                                  >
+                                    {b.text}
+                                  </button>
+                                </div>
+                                <div className="text-slate-600 font-medium">{b.curValue}</div>
+                                {b.resolution && (
+                                  <div className="bg-orange-50 text-orange-900 p-2 rounded-lg text-[11px] font-semibold border border-orange-200">
+                                    "{b.resolution}"
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+
+                    {/* [카테고리 3: 퇴직금] */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                        <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>💰 퇴직금 이슈</span>
+                        </h3>
+                        <span className="text-xs text-slate-500 font-semibold">
+                          {
+                            allLaborEvaluations.filter((x) => {
+                              if (!x.evalRes.severanceBadge) return false;
+                              if (laborBoardFilter === "actionable") return x.evalRes.severanceBadge.levelNum >= 2;
+                              return true;
+                            }).length
+                          }명
+                        </span>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                        {allLaborEvaluations
+                          .filter((x) => {
+                            if (!x.evalRes.severanceBadge) return false;
+                            if (laborBoardFilter === "actionable") return x.evalRes.severanceBadge.levelNum >= 2;
+                            return true;
+                          })
+                          .map(({ emp, evalRes }) => {
+                            const b = evalRes.severanceBadge;
+                            return (
+                              <div key={emp.id} className="bg-white border border-slate-200 rounded-xl p-3 text-xs space-y-2 shadow-2xs hover:border-orange-300 transition-all">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-900 text-sm">{emp.name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openBadgeModal(emp, b)}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold border cursor-pointer hover:opacity-80 ${b.color}`}
+                                  >
+                                    {b.text}
+                                  </button>
+                                </div>
+                                <div className="text-slate-600 font-medium">{b.curValue}</div>
+                                {b.resolution && (
+                                  <div className="bg-orange-50 text-orange-900 p-2 rounded-lg text-[11px] font-semibold border border-orange-200">
+                                    "{b.resolution}"
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. ⚙️ 근로조건 수치 관리 (Config Editor UI) */}
+                <div className="bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm space-y-6">
+                  <div className="border-b border-slate-100 pb-4">
+                    <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <Sliders className="w-5 h-5 text-[#EF7D25]" />
+                      아르바이트 근로조건 수치 관리 (Config 설정)
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      시간·일수·개월수 임계 수치를 입력하고 <strong>[설정 저장]</strong>을 누르면 인원 불러오기 화면의 뱃지 및 보드판 데이터가 실시간으로 재계산됩니다.
+                    </p>
+                  </div>
+
+                  <form
+                    onSubmit={(ev) => {
+                      ev.preventDefault();
+                      setLaborConfig(configForm);
+                      try {
+                        localStorage.setItem("payroll_labor_config", JSON.stringify(configForm));
+                      } catch (e) {}
+                      flash("근로조건 관리 수치가 성공적으로 저장되었습니다. 실시간 뱃지에 즉시 연동됩니다.");
+                    }}
+                    className="space-y-6"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* 1. 주휴수당 설정 카드리스트 */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                        <h3 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-2">
+                          💡 주휴수당 수치 설정 (주간 시간)
+                        </h3>
+
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">기준 시간 (targetHours)</label>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={configForm.weeklyAllowance.targetHours}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  weeklyAllowance: { ...configForm.weeklyAllowance, targetHours: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">1단계 최소 (시간)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.level1Min}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, level1Min: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">1단계 최대 (시간)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.level1Max}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, level1Max: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">2단계 최소 (시간)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.level2Min}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, level2Min: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">2단계 최대 (시간)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.level2Max}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, level2Max: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">3단계 최소 (시간)</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.level3Min}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, level3Min: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">확정 임계시간</label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                value={configForm.weeklyAllowance.confirmedMin}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    weeklyAllowance: { ...configForm.weeklyAllowance, confirmedMin: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-orange-600"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. 4대보험 설정 카드리스트 */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                        <h3 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-2">
+                          🛡️ 4대보험 수치 설정 (월 근로)
+                        </h3>
+
+                        <div className="space-y-3 text-xs">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">기준 시간 (월)</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.targetHours}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, targetHours: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">기준 근무일수</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.targetDays}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, targetDays: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">1단계 (시간)</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.level1HoursMin}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, level1HoursMin: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">2단계 (시간)</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.level2HoursMin}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, level2HoursMin: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">3단계 (시간)</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.level3HoursMin}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, level3HoursMin: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-semibold mb-1">확정 시간</label>
+                              <input
+                                type="number"
+                                value={configForm.socialInsurance.confirmedHoursMin}
+                                onChange={(e) =>
+                                  setConfigForm({
+                                    ...configForm,
+                                    socialInsurance: { ...configForm.socialInsurance, confirmedHoursMin: Number(e.target.value) },
+                                  })
+                                }
+                                className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-orange-600"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">월소득 기준 (만원)</label>
+                            <input
+                              type="number"
+                              value={configForm.socialInsurance.confirmedIncomeMin}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  socialInsurance: { ...configForm.socialInsurance, confirmedIncomeMin: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. 퇴직금 설정 카드리스트 */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
+                        <h3 className="font-bold text-slate-900 text-sm border-b border-slate-200 pb-2">
+                          💰 퇴직금 수치 설정 (근속 개월수)
+                        </h3>
+
+                        <div className="space-y-3 text-xs">
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">기준 근속 (targetMonths)</label>
+                            <input
+                              type="number"
+                              value={configForm.severance.targetMonths}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  severance: { ...configForm.severance, targetMonths: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-900"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">1단계 (6개월전 시점 개월수)</label>
+                            <input
+                              type="number"
+                              value={configForm.severance.level1Months}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  severance: { ...configForm.severance, level1Months: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">2단계 (4개월전 시점 개월수)</label>
+                            <input
+                              type="number"
+                              value={configForm.severance.level2Months}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  severance: { ...configForm.severance, level2Months: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">3단계 (2개월전 시점 개월수)</label>
+                            <input
+                              type="number"
+                              value={configForm.severance.level3Months}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  severance: { ...configForm.severance, level3Months: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-semibold text-slate-800"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-600 font-semibold mb-1">확정 개월수 (만 1년)</label>
+                            <input
+                              type="number"
+                              value={configForm.severance.confirmedMonths}
+                              onChange={(e) =>
+                                setConfigForm({
+                                  ...configForm,
+                                  severance: { ...configForm.severance, confirmedMonths: Number(e.target.value) },
+                                })
+                              }
+                              className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-orange-600"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLaborConfig(DEFAULT_LABOR_CONFIG);
+                          setConfigForm(DEFAULT_LABOR_CONFIG);
+                          try {
+                            localStorage.removeItem("payroll_labor_config");
+                          } catch (e) {}
+                          flash("근로조건 설정 수치가 기본값으로 복원되었습니다.");
+                        }}
+                        className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                      >
+                        🔄 기본값으로 복원
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-6 py-2.5 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-sm font-extrabold rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>💾 근로조건 수치 설정 저장</span>
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
             )}
@@ -2199,10 +3833,108 @@ export default function PayrollFlowPrototype() {
           </div>
         )}
 
+        {/* 서브탭 4: 👥 공통 직원 관리 (전사 통합 인명록) */}
+        {((role === "accounting" && accountingSubtab === "employees") || (role === "hr" && hrSubtab === "employees")) && (
+          <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
+            {/* 상단: 직원 관리 필터 및 검색 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                <button onClick={() => setEmpManagementTab("working")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "working" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>근무자</button>
+                <button onClick={() => setEmpManagementTab("resigned")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "resigned" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
+                <button onClick={() => setEmpManagementTab("search")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "search" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>검색</button>
+              </div>
+
+              {empManagementTab === "search" && (
+                <div className="relative w-full md:w-80">
+                  <input type="text" placeholder="이름으로 사원 검색..." value={empSearchTerm} onChange={(e) => setEmpSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#EF7D25]" />
+                </div>
+              )}
+            </div>
+
+            {/* 하단: 리스트 렌더링 */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider font-bold">
+                    {(() => {
+                      const handleSort = (key) => {
+                        let direction = "asc";
+                        if (empSortConfig.key === key && empSortConfig.direction === "asc") {
+                          direction = "desc";
+                        }
+                        setEmpSortConfig({ key, direction });
+                      };
+                      const renderSortIcon = (key) => {
+                        if (empSortConfig.key !== key) return null;
+                        return empSortConfig.direction === "asc" ? " ↑" : " ↓";
+                      };
+                      return (
+                        <>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("storeCode")}>매장명{renderSortIcon("storeCode")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("name")}>이름{renderSortIcon("name")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("employmentType")}>고용형태{renderSortIcon("employmentType")}</th>
+                          <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("hireDate")}>입사일{renderSortIcon("hireDate")}</th>
+                          {empManagementTab === "resigned" && <th className="px-6 py-4 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => handleSort("resignDate")}>퇴사일{renderSortIcon("resignDate")}</th>}
+                          <th className="px-6 py-4 text-right">상세 정보</th>
+                        </>
+                      );
+                    })()}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).map(emp => (
+                    <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-800">{emp.storeCode}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-bold text-slate-900">{emp.name}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-bold px-2.5 py-1 rounded-md border bg-slate-100 text-slate-700">{emp.employmentType}</span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600 font-medium">{emp.hireDate || "-"}</td>
+                      {empManagementTab === "resigned" && <td className="px-6 py-4 text-sm text-red-600 font-bold">{emp.resignDate}</td>}
+                      <td className="px-6 py-4 text-right">
+                        <button onClick={() => setSelectedEmpProfile(emp)} className="text-sm bg-white border border-slate-300 text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 font-semibold transition-colors cursor-pointer shadow-xs">프로필 열람</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {(empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps).length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-400 font-medium">해당하는 직원 데이터가 없습니다.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* ---------------- 4. 💼 인사팀 화면 (회계 승인 전/후 정보 유출 방지 및 계좌번호 제외) ---------------- */}
         {role === "hr" && (
-          <div className="space-y-8">
-            {/* 인사 서브탭 1: 인사팀 사원 승인 목록 */}
+          <div className="space-y-8 animate-in fade-in duration-200">
+            {/* 인사팀 상단 탭 버튼 */}
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => setHrSubtab("confirm")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  hrSubtab === "confirm" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>서류 관리</span>
+              </button>
+              <button
+                onClick={() => setHrSubtab("employees")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  hrSubtab === "employees" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>직원 관리</span>
+              </button>
+            </div>
+
+            {/* 인사 서브탭 1: 서류 관리 (사원 승인 목록) */}
             {hrSubtab === "confirm" && (
               <div className="max-w-4xl mx-auto space-y-8">
                 {/* 🟢 회계팀 승인 완료 ➔ 인사팀 최종 승인 대기 목록 (계좌번호 제외, 보건증/근로계약서 체크) */}
@@ -2241,8 +3973,18 @@ export default function PayrollFlowPrototype() {
                             </div>
                           </div>
                           <button
-                            onClick={() => confirmHr(e.id)}
-                            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-5 py-3.5 rounded-xl shadow-md transition-all cursor-pointer"
+                            onClick={() => {
+                              if (!e.healthCert || !e.contract) {
+                                alert("필요 서류(보건증, 근로계약서)가 모두 필요합니다.");
+                                return;
+                              }
+                              confirmHr(e.id);
+                            }}
+                            className={`flex items-center gap-1.5 text-white text-sm font-bold px-5 py-3.5 rounded-xl shadow-md transition-all ${
+                              (e.healthCert && e.contract)
+                                ? "bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
+                                : "bg-slate-300 cursor-not-allowed"
+                            }`}
                           >
                             <Check className="w-4 h-4" /> 인사팀 최종 승인 (등록 확정)
                           </button>
@@ -2611,6 +4353,123 @@ export default function PayrollFlowPrototype() {
         onClose={() => setDeleteModalState({ isOpen: false, targetId: null, targetName: "", deleteType: "store" })}
       />
 
+      {/* 🏷️ 근로조건 뱃지 클릭 상세 Modal */}
+      <BadgeDetailModal
+        isOpen={badgeModalData.isOpen}
+        onClose={() => setBadgeModalData({ isOpen: false, emp: null, badge: null })}
+        emp={badgeModalData.emp}
+        badge={badgeModalData.badge}
+        onAction={handleBadgeAction}
+      />
+
+      {/* 👥 직원 상세 프로필 모달 (열람 전용) */}
+      {selectedEmpProfile && (() => {
+        // 마지막 출근일 계산 로직
+        const empAtts = attendance.filter(a => a.empId === selectedEmpProfile.id);
+        let lastAttDate = "-";
+        if (empAtts.length > 0) {
+          const sorted = [...empAtts].sort((a,b) => new Date(b.date) - new Date(a.date));
+          lastAttDate = sorted[0].date;
+        } else if (selectedEmpProfile.hireDate) {
+          lastAttDate = `${selectedEmpProfile.hireDate} (출근기록 없음)`;
+        }
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#EF7D25]/10 flex items-center justify-center">
+                    <UserCheck className="w-5 h-5 text-[#EF7D25]" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">{selectedEmpProfile.name}</h3>
+                    <p className="text-sm font-semibold text-slate-500">{selectedEmpProfile.storeCode} · {selectedEmpProfile.employmentType}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedEmpProfile(null)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
+              </div>
+              
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-6">
+                {/* 기본 정보 */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><UserCheck className="w-4 h-4"/> 기본 신상정보</h4>
+                  <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-2 gap-4 border border-slate-100">
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">주민등록번호</div>
+                      <div className="font-bold text-slate-900">{selectedEmpProfile.ssn || "-"}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">연락처 (휴대폰)</div>
+                      <div className="font-bold text-slate-900">{selectedEmpProfile.phone || "-"}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 계약 및 소속 정보 */}
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Briefcase className="w-4 h-4"/> 계약 및 소속 정보</h4>
+                  <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-2 gap-4 border border-slate-100">
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">고용형태</div>
+                      <div className="font-bold text-slate-900">{selectedEmpProfile.employmentType || "-"}</div>
+                    </div>
+                    {selectedEmpProfile.employmentType === "정직원" && (
+                      <div>
+                        <div className="text-xs text-slate-500 font-medium mb-1">직책/부서</div>
+                        <div className="font-bold text-slate-900">{selectedEmpProfile.position || selectedEmpProfile.department || "기본 (담당/매니저)"}</div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-xs text-slate-500 font-medium mb-1">입사일</div>
+                      <div className="font-bold text-slate-900">{selectedEmpProfile.hireDate || "-"}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-blue-500 font-medium mb-1">마지막 출근일</div>
+                      <div className="font-bold text-blue-700">{lastAttDate}</div>
+                    </div>
+                    {selectedEmpProfile.resignDate && (
+                      <div>
+                        <div className="text-xs text-red-500 font-medium mb-1">퇴사일</div>
+                        <div className="font-bold text-red-600">{selectedEmpProfile.resignDate}</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              {/* 계좌 정보 */}
+              {role !== "hr" ? (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Landmark className="w-4 h-4"/> 급여 계좌 정보</h4>
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                    <div className="text-xs text-slate-500 font-medium mb-1">계좌번호</div>
+                    <div className="font-bold text-slate-900">{selectedEmpProfile.account || "등록된 계좌 없음"}</div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Lock className="w-4 h-4"/> 급여 계좌 정보</h4>
+                  <div className="bg-slate-100 rounded-2xl p-4 border border-slate-200">
+                    <div className="text-xs text-slate-500 font-medium mb-1">계좌번호</div>
+                    <div className="font-bold text-slate-400 italic">🔒 인사팀 조회 권한 없음</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button onClick={() => setSelectedEmpProfile(null)} className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer">
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
       {/* 토스트 알림 */}
       {toast && (
         <div className={`fixed bottom-8 right-8 text-base font-bold px-5 py-3.5 rounded-2xl shadow-2xl transition-all ${
@@ -2822,7 +4681,10 @@ function DocChip({ ok, label, employeeName = "사원" }) {
             <div className="flex justify-between items-center border-b pb-3">
               <div>
                 <h3 className="font-bold text-lg text-slate-900">{employeeName}님 — {label} 사진 원본</h3>
-                <p className="text-xs text-slate-500">첨부된 서류 이미지를 확인하고 PC/모바일에 다운로드할 수 있습니다.</p>
+                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  첨부된 서류 이미지를 확인하고 PC/모바일에 다운로드할 수 있습니다.
+                  <br /><span className="text-rose-500 font-bold bg-rose-50 px-1.5 py-0.5 rounded mt-1 inline-block border border-rose-100">※ 개인정보 보호법에 따라 모든 첨부 사진은 업로드일로부터 30일 경과 시 자동 영구 삭제됩니다.</span>
+                </p>
               </div>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
                 <X className="w-6 h-6" />
