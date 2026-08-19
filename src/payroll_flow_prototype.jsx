@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Store, Landmark, Briefcase, Building2, UserPlus, Lock, Unlock,
-  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight
+  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight, LogOut, FilePlus, UserX
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
 
@@ -589,6 +589,13 @@ export default function PayrollFlowPrototype() {
   const [editingEmpId, setEditingEmpId] = useState(null);
   const [editingStoreId, setEditingStoreId] = useState(null);
 
+  // 사원 관리 (매장 관리자) 전용 모달 & 필터 상태
+  const [isEmpModalOpen, setIsEmpModalOpen] = useState(false);
+  const [empListGroupTab, setEmpListGroupTab] = useState("정직원"); // 정직원, 아르바이트, 일용직, 퇴사자
+  const [isResignModalOpen, setIsResignModalOpen] = useState(false);
+  const [resigningEmpId, setResigningEmpId] = useState(null);
+  const [resignDateInput, setResignDateInput] = useState("");
+
   // 근로조건 설정 Config 상태 (localStorage 연동)
   const [laborConfig, setLaborConfig] = useState(() => {
     try {
@@ -1142,10 +1149,41 @@ export default function PayrollFlowPrototype() {
   };
 
   // 로드된 행 데이터 개별 변경
+  const getRawHours = (r) => {
+    let rawHours = 0;
+    if (r.mode === "start-only") {
+      rawHours = r.hours !== undefined ? Number(r.hours) : 10;
+    } else if (r.mode === "start-hours") {
+      rawHours = Number(r.hours) || 0;
+    } else if (r.mode === "start-end" && r.start && r.end) {
+      const [sh, sm] = r.start.split(":").map(Number);
+      const [eh, em] = r.end.split(":").map(Number);
+      const diff = (eh * 60 + em - (sh * 60 + sm)) / 60;
+      rawHours = diff > 0 ? Math.round(diff * 10) / 10 : 0;
+    }
+    return rawHours;
+  };
+
   const updateRow = (rowId, key, val) => {
     if (!checkEditPermission()) return;
     setLoadedRows((prev) =>
-      prev.map((r) => (r.rowId === rowId ? { ...r, [key]: val } : r))
+      prev.map((r) => {
+        if (r.rowId !== rowId) return r;
+        const nextR = { ...r, [key]: val };
+        
+        // 근로시간 입력 시 노동법 기준 휴식시간 자동 계산
+        if (["hours", "start", "end"].includes(key) && (nextR.employmentType === "아르바이트" || nextR.employmentType === "일용직")) {
+          const raw = getRawHours(nextR);
+          if (raw >= 20) nextR.breakMinutes = 150;
+          else if (raw >= 16) nextR.breakMinutes = 120;
+          else if (raw >= 12) nextR.breakMinutes = 90;
+          else if (raw >= 8) nextR.breakMinutes = 60;
+          else if (raw >= 4) nextR.breakMinutes = 30;
+          else nextR.breakMinutes = 0;
+        }
+        
+        return nextR;
+      })
     );
   };
 
@@ -1171,11 +1209,33 @@ export default function PayrollFlowPrototype() {
           breakMinutes: a.breakMinutes || 0,
         };
       });
+      
+      rows.sort((a, b) => {
+        const typeOrder = { "정직원": 1, "아르바이트": 2, "일용직": 3 };
+        const typeA = typeOrder[a.employmentType] || 99;
+        const typeB = typeOrder[b.employmentType] || 99;
+        if (typeA !== typeB) return typeA - typeB;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+      
       setLoadedRows(rows);
     } else {
       setLoadedRows([]);
     }
   };
+
+  // 컴포넌트 최초 마운트 또는 attendance 데이터 로드 완료 시, 
+  // 현재 날짜(attGlobalDate)의 기존 근태 데이터가 있다면 자동으로 작업창에 불러옵니다.
+  useEffect(() => {
+    if (loadedRows.length === 0) {
+      const dateAtt = attendance.filter((a) => a.date === attGlobalDate);
+      if (dateAtt.length > 0) {
+        // ESLint 경고 무시: handleGlobalDateChange는 외부에 상태만 세팅하므로 의존성 생략 가능
+        handleGlobalDateChange(attGlobalDate); 
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendance, attGlobalDate]);
 
   // 전역 근무시간 입력방식 변경 시 로드된 행 입력방식 일괄 변경
   const handleGlobalTimeModeChange = (newMode) => {
@@ -1563,10 +1623,27 @@ export default function PayrollFlowPrototype() {
       .filter((e) => e.employmentType === "아르바이트")
       .map((e) => {
         const hrs = weeklyHoursByEmployee[e.id] || 0;
-        return { e, hrs };
+        const evalRes = evaluateEmployeeLaborConditions(e, attendance, laborConfig, todayStr);
+        return { e, hrs, evalRes };
       })
-      .filter((x) => x.hrs >= 15);
-  }, [currentStoreEmployees, weeklyHoursByEmployee]);
+      .filter((x) => x.evalRes.highestLevelNum >= 3);
+  }, [currentStoreEmployees, weeklyHoursByEmployee, attendance, laborConfig, todayStr]);
+
+  const currentStoreAbsenteeAlerts = useMemo(() => {
+    const today = new Date(todayStr);
+    return currentStoreEmployees
+      .filter((e) => e.employmentType === "아르바이트" || e.employmentType === "일용직")
+      .map((e) => {
+        const empAtt = attendance.filter(a => a.employeeId === e.id);
+        if (empAtt.length === 0) return { e, lastDate: null, daysDiff: 999 };
+        const lastAtt = empAtt.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+        const lastDate = lastAtt.date;
+        const diffTime = Math.abs(today - new Date(lastDate));
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return { e, lastDate, daysDiff: diffDays };
+      })
+      .filter((x) => x.daysDiff >= 14);
+  }, [currentStoreEmployees, attendance, todayStr]);
 
   const currentStoreAttendanceList = useMemo(() => {
     return attendance.filter((a) => {
@@ -1581,8 +1658,9 @@ export default function PayrollFlowPrototype() {
     currentStoreMissingIdCardEmps.forEach((e) => list.push(`st_noid_${e.id}`));
     currentStoreMissingAccountEmps.forEach((e) => list.push(`st_noacc_${e.id}`));
     currentStorePartTime15hAlerts.forEach(({ e }) => list.push(`st_pt15_${e.id}`));
+    currentStoreAbsenteeAlerts.forEach(({ e }) => list.push(`st_abs_${e.id}`));
     return Array.from(new Set(list));
-  }, [currentStoreUnconfirmedEmps, currentStoreMissingIdCardEmps, currentStoreMissingAccountEmps, currentStorePartTime15hAlerts]);
+  }, [currentStoreUnconfirmedEmps, currentStoreMissingIdCardEmps, currentStoreMissingAccountEmps, currentStorePartTime15hAlerts, currentStoreAbsenteeAlerts]);
 
   useEffect(() => {
     if (role === "hq") {
@@ -2193,6 +2271,7 @@ export default function PayrollFlowPrototype() {
                                             <option value={60}>60분</option>
                                             <option value={90}>90분</option>
                                             <option value={120}>120분</option>
+                                            <option value={150}>150분</option>
                                           </select>
                                         </div>
                                       )}
@@ -2243,18 +2322,47 @@ export default function PayrollFlowPrototype() {
                   </h3>
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                     {currentStoreAttendanceList.length === 0 && <div className="text-sm text-slate-500">근태 기록이 없습니다.</div>}
-                    {currentStoreAttendanceList.slice().reverse().map((a) => {
-                      const emp = employees.find((e) => e.id === a.employeeId);
-                      return (
-                        <div key={a.id} className="text-sm flex justify-between items-center border-b border-slate-100 py-2">
-                          <span className="font-semibold text-slate-800">
-                            {emp?.name || "사원"} · {a.date} · <span className="text-slate-600">{a.type}</span>
-                            {a.breakMinutes > 0 && <span className="text-xs text-slate-400 ml-2">(휴게 {a.breakMinutes}분 차감됨)</span>}
-                          </span>
-                          <span className="font-bold text-[#EF7D25] bg-orange-50 border border-orange-200 px-2.5 py-1 rounded-lg text-xs">{a.totalHours || a.hours}시간</span>
-                        </div>
-                      );
-                    })}
+                    {(() => {
+                      const listWithEmp = currentStoreAttendanceList.map(a => {
+                        const emp = employees.find(e => e.id === a.employeeId);
+                        return { ...a, emp };
+                      });
+                      
+                      listWithEmp.sort((a, b) => {
+                        const typeOrder = { "정직원": 1, "아르바이트": 2, "일용직": 3 };
+                        const typeA = typeOrder[a.emp?.employmentType] || 99;
+                        const typeB = typeOrder[b.emp?.employmentType] || 99;
+                        if (typeA !== typeB) return typeA - typeB;
+                        return (a.emp?.name || "").localeCompare(b.emp?.name || "");
+                      });
+
+                      return listWithEmp.map(({ emp, ...a }) => {
+                        const isFulltime = emp?.employmentType === "정직원";
+                        const isParttime = emp?.employmentType === "아르바이트";
+                        const badgeStyle = isFulltime 
+                          ? "bg-slate-200 text-slate-800 border-slate-300"
+                          : isParttime
+                          ? "bg-orange-100 text-[#EF7D25] border-orange-300"
+                          : "bg-emerald-100 text-emerald-800 border-emerald-300";
+
+                        return (
+                          <div key={a.id} className={`text-sm flex justify-between items-center border-b border-slate-100 py-3 px-2 rounded-xl transition-all ${isFulltime ? "hover:bg-slate-50" : isParttime ? "hover:bg-orange-50/50" : "hover:bg-emerald-50/50"}`}>
+                            <span className="font-semibold text-slate-800 flex items-center flex-wrap gap-2">
+                              <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-md border ${badgeStyle}`}>
+                                {emp?.employmentType || "사원"}
+                              </span>
+                              <span className="text-base font-bold text-slate-900">{emp?.name || "알수없음"}</span> 
+                              <span className="text-slate-400">·</span> 
+                              <span className="text-slate-500">{a.date}</span> 
+                              <span className="text-slate-400">·</span> 
+                              <span className="text-slate-600 font-bold">{a.type}</span>
+                              {a.breakMinutes > 0 && <span className="text-xs text-rose-500 font-bold ml-1">(휴게 {a.breakMinutes}분 차감됨)</span>}
+                            </span>
+                            <span className="font-bold text-[#EF7D25] bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg text-sm shadow-xs">{a.totalHours || a.hours}시간</span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2489,201 +2597,102 @@ export default function PayrollFlowPrototype() {
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                사원등록
+                사원 관리
               </button>
             </div>
 
             {storeTab === "register" && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* 왼쪽 사원 등록 폼 (소속 매장은 자동 지정되며 수정 불가) */}
-                <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-100">
-                    <div className="flex items-center gap-2 text-lg font-bold text-slate-900">
-                      {editingEmpId ? <Edit3 className="w-5 h-5 text-[#EF7D25]" /> : <UserPlus className="w-5 h-5 text-[#EF7D25]" />}
-                      <h2>{editingEmpId ? `✏️ "${form.name}" 사원 서류 보완 및 수정` : "신규 사원 등록"}</h2>
-                    </div>
+              <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200 mt-2">
+                {/* 상단 탭 필터 & 신규 등록 버튼 */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                    <button onClick={() => setEmpListGroupTab("정직원")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empListGroupTab === "정직원" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>정직원</button>
+                    <button onClick={() => setEmpListGroupTab("아르바이트")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empListGroupTab === "아르바이트" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>아르바이트</button>
+                    <button onClick={() => setEmpListGroupTab("일용직")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empListGroupTab === "일용직" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>일용직</button>
+                    <button onClick={() => setEmpListGroupTab("퇴사자")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empListGroupTab === "퇴사자" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
                   </div>
-
-                  {editingEmpId && (
-                    <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-3.5 text-sm font-semibold text-[#EF7D25]">
-                      💡 <strong>"{form.name}"</strong> 사원의 기존 정보가 로드되었습니다. 수정 후 하단 [수정완료] 버튼을 누르세요.
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-base">
-                    <Field label="성명 *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="예: 홍길동" />
-                    <Field label="주민등록번호 *" value={form.ssn} onChange={(v) => setForm({ ...form, ssn: v })} placeholder="900101-1234567" />
-                    <Field label="연락처 *" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="010-0000-0000" />
-                    <Field label="입사일 *" type="date" value={form.hireDate} onChange={(v) => setForm({ ...form, hireDate: v })} />
-                    <Field label="계좌번호" value={form.account} onChange={(v) => setForm({ ...form, account: v })} placeholder="은행명 및 계좌번호" />
-                    
-                    {/* 🔒 소속 매장: 자동 매칭 및 수정 불가 */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                        소속 매장 <span className="text-xs text-slate-400 font-normal">(자동 매칭 · 수정 불가)</span>
-                      </label>
-                      <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 text-slate-900">
-                          <Store className="w-4 h-4 text-[#EF7D25]" /> {currentStoreCode}
-                        </span>
-                        <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">
-                          고정됨
-                        </span>
-                      </div>
-                    </div>
-
-                    <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => setForm({ ...form, employmentType: v })} />
-                    
-                    {form.employmentType === "정직원" && (
-                      <>
-                        <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
-                        <Field label="부서" value={form.dept} onChange={(v) => setForm({ ...form, dept: v })} placeholder="예: 홀, 주방" />
-                      </>
-                    )}
-                  </div>
-
-                  {/* 첨부서류 */}
-                  <div className="mt-6">
-                    <div className="text-sm font-semibold text-slate-700 mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span>첨부서류 (클릭 후 사진 첨부)</span>
-                      <span className="text-rose-500 font-bold text-[11px] sm:text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">※ 등록 후 30일 경과 시 자동 파기</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {DOCS.map((d) => {
-                        const fileData = form[d.key];
-                        const isAttached = Boolean(fileData);
-                        return (
-                          <label
-                            key={d.key}
-                            className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${
-                              isAttached
-                                ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-bold shadow-xs"
-                                : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"
-                            }`}
-                          >
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  try {
-                                    const compressedDataUrl = await compressImage(file);
-                                    setForm((prev) => ({ ...prev, [d.key]: compressedDataUrl }));
-                                    flash(`${d.label} 사진이 정상 첨부되었습니다!`);
-                                  } catch (err) {
-                                    flash("사진 압축 중 오류가 발생했습니다.", "error");
-                                  }
-                                }
-                              }}
-                            />
-                            {isAttached ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            ) : (
-                              <ImagePlus className="w-4 h-4 text-slate-400 shrink-0" />
-                            )}
-                            <span className="truncate">{d.label} {isAttached ? "첨부완료" : "미첨부"}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 첨부서류 하단 좌측: 퇴사일 */}
-                  <div className="mt-6 max-w-xs">
-                    <Field label="퇴사일 (입력 시 회계팀에 퇴사 알림 연동)" type="date" value={form.resignDate} onChange={(v) => setForm({ ...form, resignDate: v })} />
-                  </div>
-
-                  {formError && (
-                    <div className="mt-5 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">
-                      ⚠️ {formError}
-                    </div>
-                  )}
-
-                  {/* 하단 버튼 */}
-                  {editingEmpId ? (
-                    <div className="mt-7 flex gap-3">
-                      <button
-                        type="button"
-                        onClick={cancelEdit}
-                        className="w-1/3 bg-slate-200 hover:bg-slate-300 text-slate-800 text-lg font-bold py-4 rounded-xl transition-all cursor-pointer"
-                      >
-                        취소
-                      </button>
-                      <button
-                        type="button"
-                        onClick={submitRegister}
-                        className="w-2/3 bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
-                      >
-                        수정완료
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={submitRegister}
-                      className="mt-7 w-full bg-[#EF7D25] hover:bg-[#d96b1b] text-white text-lg font-extrabold py-4 rounded-xl shadow-md transition-all cursor-pointer"
-                    >
-                      등록완료
-                    </button>
-                  )}
+                  <button 
+                    onClick={() => { setForm(emptyForm); setEditingEmpId(null); setIsEmpModalOpen(true); }}
+                    className="flex items-center gap-2 bg-[#EF7D25] text-white px-5 py-2.5 rounded-xl font-bold shadow-md hover:bg-[#d96b1b] transition-colors cursor-pointer"
+                  >
+                    <UserPlus className="w-5 h-5" />
+                    + 신규 사원 등록
+                  </button>
                 </div>
 
-                {/* 우측 사원등록 현황 */}
-                <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200/90 p-7 shadow-sm">
-                  <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-100">
-                    <h2 className="text-lg font-bold text-slate-900">
-                      "{currentStoreCode}" 사원 현황
-                    </h2>
-                    <span className="text-sm text-slate-500 font-semibold">총 {visibleStatusEmployees.length}명</span>
-                  </div>
-                  
-                  <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-                    {visibleStatusEmployees.length === 0 && (
-                      <div className="text-sm text-slate-600 p-6 border border-dashed border-slate-300 rounded-xl text-center space-y-2 bg-slate-50">
-                        <div className="font-bold text-slate-800">💡 아직 "{currentStoreCode}"에 등록된 사원이 없습니다.</div>
-                        <p className="text-xs text-slate-500">왼쪽 신규 사원 등록 폼에서 사원 정보를 입력하고 [등록완료]를 누르시면 목록에 추가됩니다.</p>
-                      </div>
-                    )}
-                    {visibleStatusEmployees.map((e) => {
-                      const isEditing = editingEmpId === e.id;
-                      return (
-                        <div
-                          key={e.id}
-                          className={`border-2 rounded-xl p-5 transition-all shadow-xs relative ${
-                            isEditing
-                              ? "border-[#EF7D25] bg-orange-50/70 ring-2 ring-orange-200"
-                              : "border-slate-200 bg-slate-50/70 hover:bg-slate-100"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <span className="font-bold text-base text-slate-900 mr-2">{e.name}</span>
-                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md">
-                                {e.employmentType}
-                              </span>
-                            </div>
-                            
-                            <button
-                              type="button"
-                              onClick={() => startEditEmployee(e)}
-                              className="text-xs bg-[#EF7D25] hover:bg-[#d96b1b] text-white font-extrabold px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" /> 서류첨부
-                            </button>
-                          </div>
-                          
-                          <div className="text-xs text-slate-500 mb-3">
-                            연락처: {e.phone} | 입사일: {e.hireDate}
-                          </div>
-
-                          <div className="mt-2">
-                            <GatePill employee={e} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                {/* 하단 사원 리스트 (테이블) */}
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs uppercase tracking-wider font-bold">
+                        <th className="px-6 py-4">이름</th>
+                        <th className="px-6 py-4">주민등록번호</th>
+                        <th className="px-6 py-4">연락처</th>
+                        <th className="px-6 py-4">입사일</th>
+                        {empListGroupTab === "퇴사자" && <th className="px-6 py-4 text-rose-600">퇴사일</th>}
+                        <th className="px-6 py-4">서류현황</th>
+                        <th className="px-6 py-4 text-right">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(() => {
+                        const filtered = employees.filter(e => isMatchStore(e.storeCode, currentStoreObj) && (empListGroupTab === "퇴사자" ? e.resignDate : (!e.resignDate && e.employmentType === empListGroupTab)));
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={empListGroupTab === "퇴사자" ? 7 : 6} className="px-6 py-12 text-center text-slate-400 font-medium">해당하는 직원 데이터가 없습니다.</td>
+                            </tr>
+                          );
+                        }
+                        return filtered.map(emp => (
+                          <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-6 py-4 font-bold text-slate-900">{emp.name}</td>
+                            <td className="px-6 py-4 text-sm font-medium text-slate-600">{maskSsn(emp.ssn)}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{emp.phone}</td>
+                            <td className="px-6 py-4 text-sm text-slate-600">{emp.hireDate}</td>
+                            {empListGroupTab === "퇴사자" && <td className="px-6 py-4 text-sm text-rose-600 font-bold">{emp.resignDate}</td>}
+                            <td className="px-6 py-4">
+                              <div className="flex flex-wrap gap-1.5">
+                                {(() => {
+                                  const missing = DOCS.filter(d => !emp[d.key]);
+                                  if (missing.length === 0) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-300 text-emerald-700">
+                                        <CheckCircle2 className="w-3 h-3" /> 모두 제출
+                                      </span>
+                                    );
+                                  }
+                                  return missing.map(d => (
+                                    <span key={d.key} className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 border-rose-200 text-rose-500">
+                                      <AlertCircle className="w-3 h-3" />{d.label}
+                                    </span>
+                                  ));
+                                })()}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 flex justify-end gap-2">
+                              <button onClick={() => { 
+                                  setForm({...emp}); 
+                                  setEditingEmpId(emp.id); 
+                                  setIsEmpModalOpen(true); 
+                                }} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
+                                <Edit3 className="w-3 h-3"/> 정보수정
+                              </button>
+                              {empListGroupTab !== "퇴사자" && (
+                                <button onClick={() => {
+                                  setResigningEmpId(emp.id);
+                                  setIsResignModalOpen(true);
+                                  setResignDateInput("");
+                                }} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
+                                  <LogOut className="w-3 h-3"/> 퇴사처리
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -4530,25 +4539,25 @@ export default function PayrollFlowPrototype() {
 
               {/* 해당 매장 전용 KPI 카운터 */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-6">
+                <SummaryCard title="필수서류 미첨부" value={currentStoreMissingDocsEmps.length} tone="rose" subtitle={`${currentStoreObj.name} 필수 서류 누락`} />
                 <SummaryCard title="사원등록 미완료 (승인대기)" value={currentStoreUnconfirmedEmps.length} tone="orange" subtitle={`${currentStoreObj.name} 승인 진행 중`} />
-                <SummaryCard title="주민등록증 미첨부" value={currentStoreMissingIdCardEmps.length} tone="rose" subtitle={`${currentStoreObj.name} 신분 서류 누락`} />
-                <SummaryCard title="주 15h↑ 알바 (주휴/퇴직금 위험)" value={currentStorePartTime15hAlerts.length} tone="rose" subtitle={`${currentStoreObj.name} 리스크 알바생`} />
-                <SummaryCard title="계좌번호 미기재" value={currentStoreMissingAccountEmps.length} tone="orange" subtitle={`${currentStoreObj.name} 급여이체 차단`} />
+                <SummaryCard title="4대보험/퇴직금 발생 위험" value={currentStorePartTime15hAlerts.length} tone="orange" subtitle={`${currentStoreObj.name} 리스크 알바생`} />
+                <SummaryCard title="장기 미근무자 (퇴사 의심)" value={currentStoreAbsenteeAlerts.length} tone="rose" subtitle={`14일 이상 근로기록 없음`} />
               </div>
             </div>
 
             {/* 1. ⚠️ 해당 매장 주 15시간 이상 아르바이트생 리스크 감시 */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
-              <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-100">
+              <div className="flex flex-wrap items-center justify-between pb-4 mb-6 border-b border-slate-100 gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-600 shrink-0">
                     <DollarSign className="w-6 h-6" />
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                      [{currentStoreObj.name}] 주 15시간 이상 아르바이트생 리스크 (주휴수당 & 퇴직급여)
+                      [{currentStoreObj.name}] 4대보험 및 퇴직금 발생 리스크 사원 (주 15시간↑)
                     </h2>
-                    <p className="text-xs text-slate-500">이 매장의 주 15시간 이상 근무 알바생은 주휴수당 대상이며, 1년 계속 근로 시 퇴직급여(퇴직금) 지급 의무가 발생합니다.</p>
+                    <p className="text-xs text-slate-500">이 매장의 주 15시간 이상 근무 알바생은 4대보험 가입 의무 대상이며, 1년 계속 근로 시 퇴직금 지급 의무가 발생합니다.</p>
                   </div>
                 </div>
 
@@ -4560,7 +4569,7 @@ export default function PayrollFlowPrototype() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {currentStorePartTime15hAlerts.length === 0 ? (
                   <div className="col-span-2 text-sm text-slate-500 p-8 border border-dashed border-slate-300 rounded-xl text-center">
-                    "{currentStoreObj.name}" 매장에 주 15시간 이상 근무 중인 아르바이트생 위험군이 없습니다.
+                    "{currentStoreObj.name}" 매장에 4대보험 및 퇴직금 발생 위험군 알바생이 없습니다.
                   </div>
                 ) : (
                   currentStorePartTime15hAlerts.map(({ e, hrs }) => (
@@ -4582,13 +4591,65 @@ export default function PayrollFlowPrototype() {
                       <div className="space-y-1.5 pt-2 border-t border-rose-200/70 text-xs font-bold text-rose-800">
                         <div className="flex items-center gap-1.5">
                           <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>주휴수당 지급 대상 (주 15시간 이상 조건 충족)</span>
+                          <span>4대보험 가입 대상 (주 15시간 이상 조건 충족)</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                           <span>1년 지속 근무 시 <strong>퇴직급여(퇴직금) 지급 의무 발생 위험군</strong></span>
                         </div>
                       </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* 1.5 ⚠️ 장기 미근무자 (퇴사 의심) */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between pb-4 mb-6 border-b border-slate-100 gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                    <UserX className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                      [{currentStoreObj.name}] 장기 미근무자 (퇴사 의심)
+                    </h2>
+                    <p className="text-xs text-slate-500">14일(2주) 이상 근로 기록이 없는 사원 목록입니다. 퇴사 여부를 확인하고 처리하세요.</p>
+                  </div>
+                </div>
+
+                <span className="text-xs font-extrabold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-300">
+                  퇴사 의심: {currentStoreAbsenteeAlerts.length}명
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {currentStoreAbsenteeAlerts.length === 0 ? (
+                  <div className="text-sm text-slate-500 p-8 border border-dashed border-slate-300 rounded-xl text-center">
+                    "{currentStoreObj.name}" 매장에 장기 미근무(퇴사 의심) 사원이 없습니다.
+                  </div>
+                ) : (
+                  currentStoreAbsenteeAlerts.map(({ e, lastDate, daysDiff }) => (
+                    <div key={e.id} className="bg-slate-50/60 border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <div className="text-sm font-bold text-slate-900">
+                            {e.name}
+                            <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded ml-2">{e.employmentType}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            마지막 근무: <strong className="text-slate-700">{lastDate || "기록 없음"}</strong> ({daysDiff === 999 ? "출근 이력 없음" : `${daysDiff}일 경과`})
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openResignModal(e)}
+                        className="bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 text-xs font-bold px-4 py-2 rounded-lg transition-all cursor-pointer shadow-sm"
+                      >
+                        퇴사 처리하기
+                      </button>
                     </div>
                   ))
                 )}
@@ -4703,6 +4764,150 @@ export default function PayrollFlowPrototype() {
           </div>
         )}
       </main>
+
+      {/* 👤 사원 등록 및 수정 모달 */}
+      {isEmpModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-8 max-w-3xl w-full shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => { setIsEmpModalOpen(false); cancelEdit(); }} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer">
+              <X className="w-6 h-6" />
+            </button>
+            <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-6 pb-4 border-b border-slate-100">
+              {editingEmpId ? <Edit3 className="w-6 h-6 text-[#EF7D25]" /> : <UserPlus className="w-6 h-6 text-[#EF7D25]" />}
+              <h2>{editingEmpId ? `✏️ "${form.name}" 사원 서류 보완 및 수정` : "신규 사원 등록"}</h2>
+            </div>
+
+            {editingEmpId && (
+              <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 text-sm font-semibold text-[#EF7D25]">
+                💡 <strong>"{form.name}"</strong> 사원의 기존 정보가 로드되었습니다. 수정 후 하단 [수정완료] 버튼을 누르세요.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-base">
+              <Field label="성명 *" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="예: 홍길동" />
+              <Field label="주민등록번호 *" value={form.ssn} onChange={(v) => setForm({ ...form, ssn: v })} placeholder="900101-1234567" />
+              <Field label="연락처 *" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} placeholder="010-0000-0000" />
+              <Field label="입사일 *" type="date" value={form.hireDate} onChange={(v) => setForm({ ...form, hireDate: v })} />
+              <Field label="계좌번호" value={form.account} onChange={(v) => setForm({ ...form, account: v })} placeholder="은행명 및 계좌번호" />
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">소속 매장 <span className="text-xs text-slate-400 font-normal">(자동 매칭 · 수정 불가)</span></label>
+                <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-slate-900"><Store className="w-4 h-4 text-[#EF7D25]" /> {currentStoreCode}</span>
+                  <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">고정됨</span>
+                </div>
+              </div>
+              <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => setForm({ ...form, employmentType: v })} />
+              {form.employmentType === "정직원" && (
+                <>
+                  <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
+                  <Field label="부서" value={form.dept} onChange={(v) => setForm({ ...form, dept: v })} placeholder="예: 홀, 주방" />
+                </>
+              )}
+            </div>
+
+            <div className="mt-6">
+              <div className="text-sm font-semibold text-slate-700 mb-2 flex flex-wrap items-center justify-between gap-2">
+                <span>첨부서류 (클릭 후 사진 첨부)</span>
+                <span className="text-rose-500 font-bold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">※ 등록 후 30일 경과 시 자동 파기</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {DOCS.map((d) => {
+                  const fileData = form[d.key];
+                  const isAttached = Boolean(fileData);
+                  return (
+                    <label key={d.key} className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${isAttached ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-bold shadow-xs" : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"}`}>
+                      <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            const compressedDataUrl = await compressImage(file);
+                            setForm((prev) => ({ ...prev, [d.key]: compressedDataUrl }));
+                            flash(`${d.label} 사진이 정상 첨부되었습니다!`);
+                          } catch (err) {
+                            flash("사진 압축 중 오류가 발생했습니다.", "error");
+                          }
+                        }
+                      }} />
+                      {isAttached ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <ImagePlus className="w-4 h-4 text-slate-400 shrink-0" />}
+                      <span className="truncate">{d.label} {isAttached ? "첨부완료" : "미첨부"}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {formError && (
+              <div className="mt-5 text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3">⚠️ {formError}</div>
+            )}
+
+            <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
+              <button onClick={() => { setIsEmpModalOpen(false); cancelEdit(); }} className="px-6 py-3 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
+                취소
+              </button>
+              <button
+                onClick={async () => {
+                  await submitRegister();
+                  if (!formError) setIsEmpModalOpen(false);
+                }}
+                className="px-8 py-3 rounded-xl font-black bg-[#EF7D25] hover:bg-[#d96b1b] text-white transition-all shadow-md cursor-pointer"
+              >
+                {editingEmpId ? "수정완료" : "사원 등록"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* 🚪 퇴사 처리 모달 */}
+      {isResignModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
+            <button onClick={() => setIsResignModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer">
+              <X className="w-6 h-6" />
+            </button>
+            <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-6">
+              <LogOut className="w-6 h-6 text-rose-600" />
+              <h2>직원 퇴사 처리</h2>
+            </div>
+            
+            <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+              퇴사일을 입력해주세요. 퇴사 처리된 직원은 <strong>[퇴사자]</strong> 탭으로 이동하며, 이후 근태 입력 및 급여 계산 명단에서 제외됩니다.
+            </p>
+
+            <div className="mb-8">
+              <label className="block text-sm font-bold text-slate-700 mb-2">퇴사일 *</label>
+              <input 
+                type="date" 
+                value={resignDateInput}
+                onChange={(e) => setResignDateInput(e.target.value)}
+                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setIsResignModalOpen(false)} className="px-5 py-2.5 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  if (!resignDateInput) {
+                    alert("퇴사일을 입력해주세요.");
+                    return;
+                  }
+                  const updated = employees.map(e => e.id === resigningEmpId ? { ...e, resignDate: resignDateInput } : e);
+                  setEmployees(updated);
+                  setIsResignModalOpen(false);
+                  setToast({ type: "success", msg: "퇴사 처리가 완료되었습니다." });
+                  setTimeout(() => setToast(null), 3000);
+                }}
+                className="px-6 py-2.5 rounded-xl font-black bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-md cursor-pointer"
+              >
+                퇴사 처리 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🔒 비밀번호 2차 검증 모달 (삭제 작업 시 트리거) */}
       <PasswordConfirmModal
