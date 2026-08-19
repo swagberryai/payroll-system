@@ -6,7 +6,8 @@ import {
 import * as firebaseService from "../firebaseService";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
-const ATTEND_TYPES = ["정상출근", "휴무", "결근", "연차", "반차", "지각", "조퇴", "출장(외근)"];
+const ATTEND_TYPES = ["정상출근", "휴무", "결근", "연차", "반차", "지각", "조퇴", "기타"];
+const DEPARTMENTS = ["서비스", "일식", "핫/즉석", "샐러드/베이커리", "세척/찬모"];
 
 // 담당 부서별 서류 정의
 const ACCOUNTING_DOCS = [
@@ -2182,15 +2183,26 @@ export default function PayrollFlowPrototype() {
                                   {isFulltime && (
                                     <div className="md:col-span-4">
                                       <label className="block text-xs font-bold text-slate-600 mb-1">근태 구분</label>
-                                      <select
-                                        value={row.type}
-                                        onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
-                                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
-                                      >
-                                        {ATTEND_TYPES.map((t) => (
-                                          <option key={t} value={t}>{t}</option>
-                                        ))}
-                                      </select>
+                                      <div className="flex items-center gap-2">
+                                        <select
+                                          value={row.type}
+                                          onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
+                                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                                        >
+                                          {ATTEND_TYPES.map((t) => (
+                                            <option key={t} value={t}>{t}</option>
+                                          ))}
+                                        </select>
+                                        {row.type === "기타" && (
+                                          <input
+                                            type="text"
+                                            placeholder="사유 (예비군 등)"
+                                            value={row.reason || ""}
+                                            onChange={(e) => updateRow(row.rowId, "reason", e.target.value)}
+                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs"
+                                          />
+                                        )}
+                                      </div>
                                     </div>
                                   )}
 
@@ -2355,7 +2367,7 @@ export default function PayrollFlowPrototype() {
                               <span className="text-slate-400">·</span> 
                               <span className="text-slate-500">{a.date}</span> 
                               <span className="text-slate-400">·</span> 
-                              <span className="text-slate-600 font-bold">{a.type}</span>
+                              <span className="text-slate-600 font-bold">{a.type === '기타' && a.reason ? `기타 (${a.reason})` : a.type}</span>
                               {a.breakMinutes > 0 && <span className="text-xs text-rose-500 font-bold ml-1">(휴게 {a.breakMinutes}분 차감됨)</span>}
                             </span>
                             <span className="font-bold text-[#EF7D25] bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg text-sm shadow-xs">{a.totalHours || a.hours}시간</span>
@@ -4013,6 +4025,74 @@ export default function PayrollFlowPrototype() {
               </div>
             </div>
 
+            {/* 🚨 신규 사원 등록 알림 (회계팀 승인 대기) */}
+            {waitingAccounting.length > 0 && (
+              <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-lg font-bold text-blue-800 border-b border-blue-200 pb-3">
+                  <UserPlus className="w-5.5 h-5.5 text-blue-600" />
+                  <h2>🚨 신규 사원 등록 알림 (회계 승인 대기: {waitingAccounting.length}건)</h2>
+                </div>
+                <p className="text-xs text-blue-700">매장에서 신규 사원이 등록되었습니다. 서류 대조 메뉴에서 서류를 확인하고 승인해주세요.</p>
+                <div className="space-y-3">
+                  {waitingAccounting.map((e) => (
+                    <div key={e.id} className="bg-white border border-blue-300 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-xs">
+                      <div className="space-y-1">
+                        <div className="text-base font-bold text-slate-900">
+                          <span className="text-blue-700 mr-2">[{e.storeCode}]</span>
+                          {e.name}
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType}</span>
+                        </div>
+                        <div className="text-sm text-slate-600 font-medium">
+                          입사일: <strong className="text-blue-600 font-extrabold">{e.hireDate}</strong> | 연락처: {e.phone}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setRole("accounting")}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" /> 승인 처리 화면으로
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 🚨 회계팀 퇴사자 발생 확인 알림 카드 목록 */}
+            {pendingResignations.length > 0 && (
+              <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 text-lg font-bold text-rose-800 border-b border-rose-200 pb-3">
+                  <AlertTriangle className="w-5.5 h-5.5 text-rose-600" />
+                  <h2>🚨 퇴사자 발생 알림 (확인 필요: {pendingResignations.length}건)</h2>
+                </div>
+                <p className="text-xs text-rose-700">매장에서 퇴사일이 입력된 사원입니다. 회계팀 담당자가 확인을 누르면 알림 목록에서 제거됩니다.</p>
+                
+                <div className="space-y-3">
+                  {pendingResignations.map((e) => (
+                    <div key={e.id} className="bg-white border border-rose-300 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-xs">
+                      <div className="space-y-1">
+                        <div className="text-base font-bold text-slate-900">
+                          <span className="text-rose-700 mr-2">[{e.storeCode}]</span>
+                          {e.name}
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType}</span>
+                        </div>
+                        <div className="text-sm text-slate-600 font-medium">
+                          주민등록번호 전체: <strong className="text-slate-900 font-bold">{e.ssn || "-"}</strong> | 퇴사일: <strong className="text-rose-600 font-extrabold">{e.resignDate}</strong>
+                        </div>
+                      </div>
+                      
+                      <button
+                        onClick={() => confirmResignation(e.id, e.name)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" /> 확인
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 📄 회계팀 담당 서류 미첨부 사원 목록 (주민등록증 / 통장사본) */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-100">
@@ -4087,50 +4167,7 @@ export default function PayrollFlowPrototype() {
               </div>
             </div>
 
-            {/* ⚠️ 전 매장 주 15시간 이상 알바생 */}
-            <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-900 mb-4 pb-3 border-b border-slate-100 flex items-center gap-2">
-                <DollarSign className="w-5.5 h-5.5 text-rose-600" />
-                전 매장 주 15시간 이상 아르바이트생 리스크 (주휴수당 & 퇴직금 발생 가능성)
-              </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {allPartTime15hAlerts.length === 0 ? (
-                  <div className="col-span-2 text-sm text-slate-500 p-8 border border-dashed border-slate-300 rounded-xl text-center">
-                    전 매장에 주 15시간 이상 근무 중인 아르바이트생 위험군이 없습니다.
-                  </div>
-                ) : (
-                  allPartTime15hAlerts.map(({ e, hrs }) => (
-                    <div key={e.id} className="bg-rose-50/60 border-2 border-rose-200 rounded-xl p-5 shadow-xs space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-base font-extrabold text-slate-900">
-                            {e.name}
-                            <span className="text-xs font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md ml-2">{e.storeCode}</span>
-                          </div>
-                          <div className="text-xs text-slate-500 mt-0.5">입사일: {e.hireDate} | 연락처: {e.phone}</div>
-                        </div>
-
-                        <span className="text-sm font-black text-rose-700 bg-rose-100 px-3 py-1 rounded-lg border border-rose-300">
-                          주 {hrs}시간 근무
-                        </span>
-                      </div>
-
-                      <div className="space-y-1.5 pt-2 border-t border-rose-200/70 text-xs font-bold text-rose-800">
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>주휴수당 지급 대상 (주 15시간 이상 조건 충족)</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>1년 지속 근무 시 <strong>퇴직급여(퇴직금) 지급 의무 발생 위험군</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
 
             {/* 🏪 매장별 회계 리스크 현황 리포트 테이블 */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
@@ -4364,6 +4401,75 @@ export default function PayrollFlowPrototype() {
                     <SummaryCard title="근로계약서 미첨부 (전 매장)" value={allMissingContract.length} tone="rose" subtitle="근로계약서 미작성/미첨부 사원" />
                   </div>
                 </div>
+
+                {/* 🚨 신규 사원 등록 알림 (인사팀 승인 대기) */}
+                {waitingHr.length > 0 && (
+                  <div className="bg-blue-50 border-2 border-blue-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 text-lg font-bold text-blue-800 border-b border-blue-200 pb-3">
+                      <UserPlus className="w-5.5 h-5.5 text-blue-600" />
+                      <h2>🚨 신규 사원 등록 알림 (인사 승인 대기: {waitingHr.length}건)</h2>
+                    </div>
+                    <p className="text-xs text-blue-700">회계팀 승인이 완료된 신규 사원입니다. 서류 관리 메뉴에서 인사 서류를 확인하고 승인해주세요.</p>
+                    <div className="space-y-3">
+                      {waitingHr.map((e) => (
+                        <div key={e.id} className="bg-white border border-blue-300 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-xs">
+                          <div className="space-y-1">
+                            <div className="text-base font-bold text-slate-900">
+                              <span className="text-blue-700 mr-2">[{e.storeCode}]</span>
+                              {e.name}
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType}</span>
+                            </div>
+                            <div className="text-sm text-slate-600 font-medium">
+                              입사일: <strong className="text-blue-600 font-extrabold">{e.hireDate}</strong> | 연락처: {e.phone}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setHrSubtab("confirm")}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" /> 서류 관리 메뉴로 이동
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 🚨 인사팀 퇴사자 발생 확인 알림 카드 목록 */}
+                {pendingResignations.length > 0 && (
+                  <div className="bg-rose-50 border-2 border-rose-200 rounded-2xl p-6 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 text-lg font-bold text-rose-800 border-b border-rose-200 pb-3">
+                      <AlertTriangle className="w-5.5 h-5.5 text-rose-600" />
+                      <h2>🚨 퇴사자 발생 알림 (퇴사 처리 대기: {pendingResignations.length}건)</h2>
+                    </div>
+                    <p className="text-xs text-rose-700">매장에서 퇴사일이 입력된 사원입니다. 회계팀 또는 인사팀의 확인이 필요합니다.</p>
+                    
+                    <div className="space-y-3">
+                      {pendingResignations.map((e) => (
+                        <div key={e.id} className="bg-white border border-rose-300 rounded-xl p-4 flex flex-wrap justify-between items-center gap-4 shadow-xs">
+                          <div className="space-y-1">
+                            <div className="text-base font-bold text-slate-900">
+                              <span className="text-rose-700 mr-2">[{e.storeCode}]</span>
+                              {e.name}
+                              <span className="text-xs font-semibold px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md ml-2">{e.employmentType}</span>
+                            </div>
+                            <div className="text-sm text-slate-600 font-medium">
+                              퇴사일: <strong className="text-rose-600 font-extrabold">{e.resignDate}</strong> | 입사일: {e.hireDate}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => confirmResignation(e.id, e.name)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Check className="w-4 h-4" /> 확인
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+
 
                 {/* 인사팀 전담 서류 미첨부 목록 */}
                 <div className="bg-white rounded-2xl border border-slate-200/90 p-8 shadow-sm">
@@ -4800,7 +4906,7 @@ export default function PayrollFlowPrototype() {
               {form.employmentType === "정직원" && (
                 <>
                   <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
-                  <Field label="부서" value={form.dept} onChange={(v) => setForm({ ...form, dept: v })} placeholder="예: 홀, 주방" />
+                  <Select label="부서" value={form.dept} options={DEPARTMENTS} onChange={(v) => setForm({ ...form, dept: v })} showDefaultOption={true} />
                 </>
               )}
             </div>
@@ -4889,16 +4995,24 @@ export default function PayrollFlowPrototype() {
                 취소
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!resignDateInput) {
                     alert("퇴사일을 입력해주세요.");
                     return;
                   }
-                  const updated = employees.map(e => e.id === resigningEmpId ? { ...e, resignDate: resignDateInput } : e);
-                  setEmployees(updated);
-                  setIsResignModalOpen(false);
-                  setToast({ type: "success", msg: "퇴사 처리가 완료되었습니다." });
-                  setTimeout(() => setToast(null), 3000);
+                  try {
+                    // Update Firebase instead of local state
+                    await firebaseService.updateEmployee(resigningEmpId, {
+                      resignDate: resignDateInput,
+                      resignConfirmed: false
+                    }, "store_user");
+                    setIsResignModalOpen(false);
+                    setToast({ type: "success", msg: "퇴사 처리가 완료되었습니다." });
+                    setTimeout(() => setToast(null), 3000);
+                  } catch (error) {
+                    console.error("퇴사 처리 오류:", error);
+                    alert("퇴사 처리 중 오류가 발생했습니다.");
+                  }
                 }}
                 className="px-6 py-2.5 rounded-xl font-black bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-md cursor-pointer"
               >
