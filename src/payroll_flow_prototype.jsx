@@ -2669,12 +2669,116 @@ export default function PayrollFlowPrototype() {
       </nav>
 
       {/* 3. 메인 콘텐츠 영역 */}
-      <main className={`${role === "store" && storeTab === "schedule" ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
+      <main className={`${(role === "store" && storeTab === "schedule") || (role === "accounting" && accountingSubtab === "schedule") ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
+        {role === "accounting" && (
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => setAccountingSubtab("confirm")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "confirm"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>사원등록/퇴사 관리</span>
+                {(waitingAccounting.length + pendingResignations.length + suspectedResignations.length) > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
+                    accountingSubtab === "confirm" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
+                  }`}>
+                    {waitingAccounting.length + pendingResignations.length + suspectedResignations.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("attendance")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "attendance"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>근태 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("schedule")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "schedule"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>스케줄 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("employees")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "employees"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>직원 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("holidays")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "holidays"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span>연차/휴무일 관리</span>
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("labor")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "labor"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Sliders className="w-4 h-4" />
+                <span>아르바이트 수당 관리</span>
+                {actionableLaborEmps.length > 0 && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
+                    accountingSubtab === "labor" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
+                  }`}>
+                    {actionableLaborEmps.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setAccountingSubtab("stores")}
+                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "stores"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Store className="w-4 h-4" />
+                <span>매장 관리</span>
+              </button>
+            </div>
+        )}
+
         {/* ---------------- 1. 매장 화면 (해당 로그인 매장의 데이터만 독립 연동) ---------------- */}
-        {role === "store" && (
+        {(role === "store" || (role === "accounting" && accountingSubtab === "schedule")) && (
           <div>
-            {/* 로그인 매장 고정 배너 */}
-            <div className="flex flex-wrap items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-xs mb-6 gap-4">
+            {role === "store" && (
+              <>
+                {/* 로그인 매장 고정 배너 */}
+                <div className="flex flex-wrap items-center justify-between bg-white p-5 rounded-2xl border border-slate-200 shadow-xs mb-6 gap-4">
               <div className="flex items-center gap-3.5">
                 <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-[#EF7D25] shrink-0">
                   <Store className="w-6 h-6" />
@@ -2737,8 +2841,10 @@ export default function PayrollFlowPrototype() {
                 사원 관리
               </button>
             </div>
+            </>
+            )}
 
-            {storeTab === "register" && (
+            {role === "store" && storeTab === "register" && (
               <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200 mt-2">
                 {/* 상단 탭 필터 & 신규 등록 버튼 */}
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2835,10 +2941,10 @@ export default function PayrollFlowPrototype() {
             )}
 
             {/* ---------------- 🗓️ 새로 개편된 그리드형 일괄 매장 근태 입력 ---------------- */}
-            {storeTab === "attendance" && renderAttendanceTab()}
+            {role === "store" && storeTab === "attendance" && renderAttendanceTab()}
 
             {/* ---------------- 📅 스케줄 현황 탭 ---------------- */}
-            {storeTab === "schedule" && (() => {
+            {((role === "store" && storeTab === "schedule") || (role === "accounting" && accountingSubtab === "schedule")) && (() => {
               // ── 날짜 헬퍼 ──
               const today = getKstDateString(new Date());
 
@@ -3069,6 +3175,29 @@ export default function PayrollFlowPrototype() {
                 <div className="animate-in fade-in duration-200">
                   <style>{printStyle}</style>
 
+                  {role === "accounting" && (
+                    <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                          <Store className="w-5 h-5 text-[#EF7D25]" />
+                          매장 선택
+                        </h2>
+                        <select
+                          value={currentStoreCode}
+                          onChange={(e) => setCurrentStoreCode(e.target.value)}
+                          className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
+                        >
+                          {storeList.map(s => (
+                            <option key={s.code} value={s.name}>{s.name}</option>
+                          ))}
+                        </select>
+                        <span className="text-sm text-slate-500 font-semibold ml-2">
+                          선택한 매장의 스케줄 데이터를 열람/수정합니다. (회계 권한: 과거 데이터 수정 가능)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* 고용형태 서브탭 */}
                   <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                     <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
@@ -3146,19 +3275,10 @@ export default function PayrollFlowPrototype() {
                     </div>
                   </div>
 
-                  {/* 일용직 준비중 */}
-                  {scheduleGroupTab === "일용직" && (
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-16 flex flex-col items-center justify-center gap-4 text-center">
-                      <Calendar className="w-14 h-14 text-[#EF7D25] opacity-60" />
-                      <p className="text-xl font-bold text-slate-700">{scheduleGroupTab} 스케줄</p>
-                      <p className="text-slate-400 text-sm">별도 양식으로 준비 중입니다.</p>
-                    </div>
-                  )}
-
-                  {/* 정직원 / 아르바이트 그리드 */}
-                  {(scheduleGroupTab === "정직원" || scheduleGroupTab === "아르바이트") && (() => {
-                    const isParttimeMode = scheduleGroupTab === "아르바이트";
-                    const targetEmps = isParttimeMode ? parttimeEmps : fullTimeEmps;
+                  {/* 정직원 / 아르바이트 / 일용직 그리드 */}
+                  {(scheduleGroupTab === "정직원" || scheduleGroupTab === "아르바이트" || scheduleGroupTab === "일용직") && (() => {
+                    const isParttimeMode = scheduleGroupTab === "아르바이트" || scheduleGroupTab === "일용직";
+                    const targetEmps = scheduleGroupTab === "정직원" ? fullTimeEmps : scheduleGroupTab === "아르바이트" ? parttimeEmps : dailyEmps;
                     return (
                     <div id="schedule-print-area">
                       {/* 인쇄 헤더 */}
@@ -3245,7 +3365,7 @@ export default function PayrollFlowPrototype() {
                                         const rec = getCellData(emp.id, d);
                                         const cellInfo = getCellLabel(rec);
                                         const red = isRed(d);
-                                        const editable = isFuture(d);
+                                        const editable = role === "accounting" || isFuture(d);
                                         const isEditing = scheduleCellEdit?.empId === emp.id && scheduleCellEdit?.date === d;
 
                                         return (
@@ -3455,7 +3575,7 @@ export default function PayrollFlowPrototype() {
                                     const rec = getCellData(emp.id, d);
                                     const cellInfo = getCellLabel(rec);
                                     const red = isRed(d);
-                                    const editable = isFuture(d);
+                                    const editable = role === "accounting" || isFuture(d);
                                     const day = parseInt(d.slice(8), 10);
                                     const hn = holidayNameMap[d];
                                     const firstDow = new Date(monthDates[0] + "T00:00:00").getDay();
@@ -3568,93 +3688,6 @@ export default function PayrollFlowPrototype() {
         {/* ---------------- 2. 🏛️ 회계팀 화면 (주민번호/계좌번호 원본 무마스킹 표시 및 대조 지원) ---------------- */}
         {role === "accounting" && (
           <div>
-            <div className="flex gap-3 mb-6">
-              <button
-                onClick={() => setAccountingSubtab("confirm")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "confirm"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>사원등록/퇴사 관리</span>
-                {(waitingAccounting.length + pendingResignations.length + suspectedResignations.length) > 0 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
-                    accountingSubtab === "confirm" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
-                  }`}>
-                    {waitingAccounting.length + pendingResignations.length + suspectedResignations.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setAccountingSubtab("attendance")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "attendance"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                <span>근태 관리</span>
-              </button>
-
-              <button
-                onClick={() => setAccountingSubtab("employees")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "employees"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>직원 관리</span>
-              </button>
-
-              <button
-                onClick={() => setAccountingSubtab("holidays")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "holidays"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                <span>연차/휴무일 관리</span>
-              </button>
-
-              <button
-                onClick={() => setAccountingSubtab("labor")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "labor"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Sliders className="w-4 h-4" />
-                <span>아르바이트 수당 관리</span>
-                {actionableLaborEmps.length > 0 && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-black ${
-                    accountingSubtab === "labor" ? "bg-white text-[#EF7D25]" : "bg-[#EF7D25] text-white"
-                  }`}>
-                    {actionableLaborEmps.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setAccountingSubtab("stores")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
-                  accountingSubtab === "stores"
-                    ? "bg-[#EF7D25] text-white shadow-md"
-                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <Store className="w-4 h-4" />
-                <span>매장 관리</span>
-              </button>
-            </div>
 
             {/* 서브탭 1: 사원등록 확인 목록 (회계 담당: 주민등록증/통장사본 및 주민번호/계좌 대조) */}
             {accountingSubtab === "confirm" && (
