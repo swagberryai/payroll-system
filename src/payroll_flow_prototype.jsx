@@ -680,14 +680,36 @@ export default function PayrollFlowPrototype() {
     setIsProfileResignModalOpen(true);
   };
 
-  const confirmProfileResignation = () => {
-    if (profileResignInputText.trim() !== "퇴사처리") return;
-    const today = new Date().toISOString().split('T')[0];
-    handleProfileFormChange('resignDate', today);
-    handleProfileFormChange('status', '퇴사');
-    setIsProfileResignModalOpen(false);
-    setProfileResignInputText("");
-    flash(`${profileEditForm?.name || "해당"} 직원의 퇴사일이 ${today}로 설정되었습니다. 프로필의 '저장' 버튼을 눌러 확정해주세요.`);
+  const confirmProfileResignation = async () => {
+    if (profileResignInputText.trim() !== "퇴사처리" || !profileEditForm?.id) return;
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const updatedProfile = {
+        ...profileEditForm,
+        resignDate: today,
+        status: '퇴사'
+      };
+      
+      // 1. Firebase 에 퇴사 상태 즉시 저장
+      await firebaseService.updateEmployee(updatedProfile.id, updatedProfile);
+      
+      // 2. 전체 employees state 즉시 업데이트
+      setEmployees(prev => prev.map(e => e.id === updatedProfile.id ? { ...e, ...updatedProfile } : e));
+      
+      // 3. 모달 닫기 및 초기화
+      setIsProfileResignModalOpen(false);
+      setSelectedEmpProfile(null);
+      setProfileResignInputText("");
+      
+      // 4. 퇴사자 탭으로 자동 이동
+      if (typeof setEmpManagementTab === 'function') setEmpManagementTab("resigned");
+      if (typeof setEmpListGroupTab === 'function') setEmpListGroupTab("퇴사자");
+      
+      flash(`"${updatedProfile.name}" 직원의 퇴사 처리가 완료되어 [퇴사자] 탭으로 이동했습니다.`);
+    } catch(err) {
+      console.error(err);
+      alert("퇴사 처리 중 오류가 발생했습니다.");
+    }
   };
   const [dismissedSuspectedAlerts, setDismissedSuspectedAlerts] = useState([]); // 퇴직 의심 알림 닫기 상태
   const [dismissedSeveranceAlerts, setDismissedSeveranceAlerts] = useState([]); // 퇴직금 발생 알림 닫기 상태
@@ -1725,8 +1747,8 @@ export default function PayrollFlowPrototype() {
       });
     };
 
-    const working = sortEmps(employees.filter(e => !e.resignDate));
-    const resigned = sortEmps(employees.filter(e => e.resignDate));
+    const working = sortEmps(employees.filter(e => !e.resignDate && e.status !== "퇴사"));
+    const resigned = sortEmps(employees.filter(e => e.resignDate || e.status === "퇴사"));
     
     let searched = [];
     if (empSearchTerm.trim()) {
