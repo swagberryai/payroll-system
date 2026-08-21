@@ -1130,10 +1130,10 @@ export default function PayrollFlowPrototype() {
           date: attGlobalDate,
           type: "정상출근",
           mode: attTimeMode,
-          start: "09:00",
-          end: "18:00",
-          hours: attTimeMode === "start-only" ? 10 : 8,
-          breakMinutes: 0,
+          start: "10:00",
+          end: "22:00",
+          hours: attTimeMode === "start-only" ? 10 : 10,
+          breakMinutes: 120,
         });
         count++;
       }
@@ -1164,10 +1164,10 @@ export default function PayrollFlowPrototype() {
             date: attGlobalDate,
             type: "정상출근",
             mode: attTimeMode,
-            start: "09:00",
-            end: "18:00",
-            hours: attTimeMode === "start-only" ? 10 : 8,
-            breakMinutes: 0,
+            start: "10:00",
+            end: "22:00",
+            hours: attTimeMode === "start-only" ? 10 : 10,
+            breakMinutes: 120,
           });
           count++;
         }
@@ -1433,8 +1433,8 @@ export default function PayrollFlowPrototype() {
       rawHours = diff > 0 ? Math.round(diff * 10) / 10 : 0;
     }
 
-    // 아르바이트의 경우 휴게시간(분) 차감
-    if (row.employmentType === "아르바이트" && row.breakMinutes) {
+    // 휴게시간(분) 차감 (정직원 및 아르바이트 공통)
+    if (row.breakMinutes) {
       const breakHours = (Number(row.breakMinutes) || 0) / 60;
       rawHours = Math.max(0, Math.round((rawHours - breakHours) * 10) / 10);
     }
@@ -2440,21 +2440,22 @@ export default function PayrollFlowPrototype() {
                                         </div>
                                       )}
 
-                                      {/* 🐥 아르바이트: 휴식(휴게)시간 차감 입력 및 실 근무시간 계산 */}
-                                      {isParttime && (
+                                      {/* ☕ 정직원 & 아르바이트: 휴식(휴게)시간 차감 입력 */}
+                                      {(isFulltime || isParttime) && (
                                         <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
                                           <span className="text-xs font-bold text-slate-600">휴식시간:</span>
                                           <select
-                                            value={row.breakMinutes ?? 60}
+                                            value={row.breakMinutes ?? (isFulltime ? 120 : 60)}
                                             onChange={(e) => updateRow(row.rowId, "breakMinutes", Number(e.target.value))}
                                             className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-extrabold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#EF7D25]"
                                           >
                                             <option value={0}>0분</option>
                                             <option value={30}>30분</option>
-                                            <option value={60}>60분</option>
-                                            <option value={90}>90분</option>
-                                            <option value={120}>120분</option>
-                                            <option value={150}>150분</option>
+                                            <option value={60}>60분(1시간)</option>
+                                            <option value={90}>90분(1시간30분)</option>
+                                            <option value={120}>120분(2시간)</option>
+                                            <option value={150}>150분(2시간30분)</option>
+                                            <option value={180}>180분(3시간)</option>
                                           </select>
                                         </div>
                                       )}
