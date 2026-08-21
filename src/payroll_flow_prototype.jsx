@@ -6292,7 +6292,7 @@ export default function PayrollFlowPrototype() {
                                       <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#EFF3F9] text-[#1E293B]" colSpan={8}>공제금액</th>
 
                                       {/* 💵 차인지급액 헤더 */}
-                                      <th className="px-2 py-2 border-r border-slate-300 font-black bg-[#FEF08A] text-slate-900 text-sm" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>차인지급액</th>
+                                      <th className="px-2 py-2 border-r border-slate-300 font-black bg-[#3D5A80] text-white text-sm" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>차인지급액</th>
                                     </>
                                   )}
                                 </>
@@ -6345,7 +6345,8 @@ export default function PayrollFlowPrototype() {
                                   {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                                     salaryMonthDates.map(d => {
                                       const dow = ["일","월","화","수","목","금","토"][new Date(d + "T00:00:00").getDay()];
-                                      const red = isRed(d);
+                                      const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
+                                      const red = isCompanyHoliday;
                                       return (
                                         <th key={d} className={`px-0.5 py-0.5 border-r border-[#D6E0EC] text-[10px] text-center font-medium ${red ? "bg-rose-50 text-rose-500" : "bg-[#EFF3F9] text-slate-500"}`}>
                                           {dow}
@@ -6418,6 +6419,7 @@ export default function PayrollFlowPrototype() {
                                 if (isParttimePayroll) {
                                   let workDaysCount = 0;
                                   let normalHoursSum = 0;
+                                  let otHoursSum = 0;
                                   let holidayHoursSum = 0;
 
                                   salaryMonthDates.forEach(d => {
@@ -6425,14 +6427,33 @@ export default function PayrollFlowPrototype() {
                                     const hrs = parseFloat(rec?.hours) || 0;
                                     if (hrs > 0) {
                                       workDaysCount++;
-                                      if (isRed(d)) {
-                                        holidayHoursSum += hrs;
+                                      const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
+                                      
+                                      let dailyNormal = 0;
+                                      let dailyOt = 0;
+                                      let dailyHoliday = 0;
+
+                                      if (hrs > 10) {
+                                        dailyOt = hrs - 10;
+                                        if (isCompanyHoliday) {
+                                          dailyHoliday = 10;
+                                        } else {
+                                          dailyNormal = 10;
+                                        }
                                       } else {
-                                        normalHoursSum += hrs;
+                                        if (isCompanyHoliday) {
+                                          dailyHoliday = hrs;
+                                        } else {
+                                          dailyNormal = hrs;
+                                        }
                                       }
+
+                                      normalHoursSum += dailyNormal;
+                                      otHoursSum += dailyOt;
+                                      holidayHoursSum += dailyHoliday;
                                     }
                                   });
-                                  const totalHoursSum = normalHoursSum + holidayHoursSum;
+                                  const totalHoursSum = normalHoursSum + otHoursSum + holidayHoursSum;
 
                                   return (
                                     <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
@@ -6454,7 +6475,8 @@ export default function PayrollFlowPrototype() {
                                         salaryMonthDates.map(d => {
                                           const rec = getCellData(emp.id, d);
                                           const hrs = rec?.hours || "";
-                                          const red = isRed(d);
+                                          const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
+                                          const red = isCompanyHoliday;
                                           return (
                                             <td key={d} className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold ${red ? "bg-rose-50/40 text-rose-700" : "text-slate-800"}`}>
                                               {hrs}
@@ -6464,10 +6486,10 @@ export default function PayrollFlowPrototype() {
                                       )}
 
                                       {/* ⏱️ 근무시간 세부 셀 */}
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-emerald-800 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
-                                      {renderEditableCell(emp.id, 'otHours')}
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-emerald-800 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-amber-700 text-xs text-center">{otHoursSum > 0 ? otHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : "-"}</td>
                                       <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalHoursSum > 0 ? totalHoursSum : "-"}</td>
 
                                       {(salaryViewMode === "all" || salaryViewMode === "partB") && (
