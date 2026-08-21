@@ -5952,10 +5952,10 @@ export default function PayrollFlowPrototype() {
                       <thead>
                         {/* Header Row 1 */}
                         <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>NO</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>부서</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>직책</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>성명</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px' }} rowSpan={2}>NO</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '100px' }} rowSpan={2}>부서</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '80px' }} rowSpan={2}>직책</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '220px', minWidth: '100px' }} rowSpan={2}>성명</th>
                           
                           {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                             <>
@@ -6022,10 +6022,10 @@ export default function PayrollFlowPrototype() {
                           .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
                           .map((emp, index) => (
                             <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
-                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px' }}>{index + 1}</td>
-                              {(salaryViewMode === "all" || salaryViewMode === "partA") && <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '100px' }}>{emp.department || ""}</td>}
-                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: (salaryViewMode === 'partB' ? 40 : 140) + 'px', minWidth: '80px' }}>{emp.position || ""}</td>
-                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit border-r-2 border-r-[#FD7B37]" style={{ left: (salaryViewMode === 'partB' ? 120 : 220) + 'px', minWidth: '100px' }}>
+                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px' }}>{index + 1}</td>
+                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '100px' }}>{emp.department || ""}</td>
+                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit" style={{ left: '140px', minWidth: '80px' }}>{emp.position || ""}</td>
+                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '220px', minWidth: '100px' }}>
                                 <span 
                                   onClick={() => setSelectedEmpProfile(emp)}
                                   className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#7A3416]"}`}
