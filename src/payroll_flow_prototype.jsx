@@ -615,6 +615,16 @@ function CellEditor({ empId, date, existType, existRemark, handleCellSave, onClo
   );
 }
 
+const DEFAULT_SALARY_RULES = [
+  { target: 'basePay', type: 'text', rawFormula: '정상 근무시간 * 프로필 시급', formula: [] },
+  { target: 'otPay', type: 'text', rawFormula: '(연장 근무시간 * 프로필 시급) * 1.5', formula: [] },
+  { target: 'holidayPay', type: 'text', rawFormula: '(휴일 근무시간 * 프로필 시급) * 1.5', formula: [] },
+  { target: 'grossPay', type: 'text', rawFormula: '기본급 + 연장수당 + 휴일수당', formula: [] },
+  { target: 'healthIns', type: 'text', rawFormula: '급여합계 * 3.595% (10원 단위 절사)', formula: [] },
+  { target: 'longTermCare', type: 'text', rawFormula: '건강보험료 * 13.14% (10원 단위 절사)', formula: [] },
+  { target: 'employmentIns', type: 'text', rawFormula: '급여합계 * 0.9% (10원 단위 절사)', formula: [] }
+];
+
 export default function PayrollFlowPrototype() {
   const [currentUserRole, setCurrentUserRole] = useState("accounting");
   const [currentStoreCode, setCurrentStoreCode] = useState("고메스퀘어 부천점");
@@ -628,15 +638,7 @@ export default function PayrollFlowPrototype() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [payrollData, setPayrollData] = useState([]);
-  const [salaryRules, setSalaryRules] = useState([
-    { target: 'basePay', type: 'text', rawFormula: '정상 근무시간 * 프로필 시급', formula: [] },
-    { target: 'otPay', type: 'text', rawFormula: '(연장 근무시간 * 프로필 시급) * 1.5', formula: [] },
-    { target: 'holidayPay', type: 'text', rawFormula: '(휴일 근무시간 * 프로필 시급) * 1.5', formula: [] },
-    { target: 'grossPay', type: 'text', rawFormula: '기본급 + 연장수당 + 휴일수당', formula: [] },
-    { target: 'healthIns', type: 'text', rawFormula: '급여합계 * 3.595% (10원 단위 절사)', formula: [] },
-    { target: 'longTermCare', type: 'text', rawFormula: '건강보험료 * 13.14% (10원 단위 절사)', formula: [] },
-    { target: 'employmentIns', type: 'text', rawFormula: '급여합계 * 0.9% (10원 단위 절사)', formula: [] }
-  ]);
+  const [salaryRules, setSalaryRules] = useState(DEFAULT_SALARY_RULES);
   const [showRuleEditor, setShowRuleEditor] = useState(false);
   const [hrSubtab, setHrSubtab] = useState("confirm");
 
@@ -912,7 +914,13 @@ export default function PayrollFlowPrototype() {
   useEffect(() => {
     if (role !== "accounting" || accountingSubtab !== "salary") return;
     const unsubPayrolls = firebaseService.subscribePayrolls(currentStoreCode, salaryBaseDate, setPayrollData);
-    const unsubRules = firebaseService.subscribeSalaryRules(currentStoreCode, setSalaryRules);
+    const unsubRules = firebaseService.subscribeSalaryRules(currentStoreCode, (rules) => {
+      if (!rules || rules.length === 0) {
+        setSalaryRules(DEFAULT_SALARY_RULES);
+      } else {
+        setSalaryRules(rules);
+      }
+    });
     return () => {
       if(unsubPayrolls) unsubPayrolls();
       if(unsubRules) unsubRules();
