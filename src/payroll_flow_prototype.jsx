@@ -5948,64 +5948,64 @@ export default function PayrollFlowPrototype() {
 
                 
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto w-full pb-10">
-                    <table className="w-max border-collapse text-sm text-center min-w-max">
+                    <table id="salary-table" className="w-full min-w-max border-collapse text-sm text-center whitespace-nowrap">
                       <thead>
                         {/* Header Row 1 */}
-                        <tr className="bg-[#FFF2EB] text-[#7A3416] border-b-2 border-[#FD7B37] font-semibold text-[13px]">
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>NO</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>부서</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>직책</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>성명</th>
+                        <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>NO</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>부서</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>직책</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>성명</th>
                           
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>근무일수</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>월정급여</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>시급</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>기본급<br/>209.00</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>식대</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>고정연장수당<br/>65.18</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>고정연차수당<br/>8.00</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>소계<br/>282.18</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>상여금</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>근무일수</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>월정급여</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>시급</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>기본급</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>식대</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>고정연장수당</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>고정연차수당</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>소계</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>상여금</th>
                           
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={2}>휴일근로</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={2}>추가휴일연장근로</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold text-[#5c8ed1] bg-[#e4eef6]" colSpan={2}>지각/조퇴/결근/기타</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={2}>휴일근로</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={2}>추가휴일연장근로</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" colSpan={2}>지각/조퇴/결근/기타</th>
                           
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>급여총계</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={9}>공제내역</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>실지급액</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>급여총계</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={9}>공제내역</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>실지급액</th>
                           
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>특이사항</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>퇴직연금</th>
-                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>평균임금</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>특이사항</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>퇴직연금</th>
+                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>평균임금</th>
                           <th className="px-3 py-2 border-slate-300 font-semibold" rowSpan={2}>연봉</th>
                         </tr>
                         
                         {/* Header Row 2 */}
-                        <tr className="bg-[#FFF8F3] text-[#7A3416] border-b border-[#F3E9E2] text-[12px] font-medium">
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">시간</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">수당</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">시간</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">수당</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2] bg-[#e4eef6] text-[#5c8ed1]">시간</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2] bg-[#e4eef6] text-[#5c8ed1]">수당</th>
+                        <tr className="bg-[#EFF3F9] text-[#33455E] border-b border-[#D6E0EC] text-[12px] font-medium">
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">시간</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">수당</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">시간</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">수당</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC] ">시간</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC] ">수당</th>
                           
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">국민연금</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">건강보험</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">장기요양</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">고용보험</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">연말(지방세)</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">가지급금</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">소득세</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">지방소득세</th>
-                          <th className="px-2 py-1 border-r border-[#F3E9E2]">공제계</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">국민연금</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">건강보험</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">장기요양</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">고용보험</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">연말(지방세)</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">가지급금</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">소득세</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">지방소득세</th>
+                          <th className="px-2 py-1 border-r border-[#D6E0EC]">공제계</th>
                         </tr>
                       </thead>
                                             <tbody>
                         {employees
                           .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
                           .map((emp, index) => (
-                            <tr key={emp.id} className="border-b border-[#F3E9E2] hover:bg-[#FFF2EB]/60 transition-colors even:bg-[#FFFAF7] bg-white text-[13px]">
+                            <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
                               <td className="px-3 py-2 border-b border-[#F3E9E2] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px' }}>{index + 1}</td>
                               {(salaryViewMode === "all" || salaryViewMode === "partA") && <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '100px' }}>{emp.department || ""}</td>}
                               <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: (salaryViewMode === 'partB' ? 40 : 140) + 'px', minWidth: '80px' }}>{emp.position || ""}</td>
