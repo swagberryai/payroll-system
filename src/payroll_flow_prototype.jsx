@@ -6345,8 +6345,7 @@ export default function PayrollFlowPrototype() {
                                   {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                                     salaryMonthDates.map(d => {
                                       const dow = ["일","월","화","수","목","금","토"][new Date(d + "T00:00:00").getDay()];
-                                      const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
-                                      const red = isCompanyHoliday;
+                                      const red = isRed(d);
                                       return (
                                         <th key={d} className={`px-0.5 py-0.5 border-r border-[#D6E0EC] text-[10px] text-center font-medium ${red ? "bg-rose-50 text-rose-500" : "bg-[#EFF3F9] text-slate-500"}`}>
                                           {dow}
@@ -6475,10 +6474,14 @@ export default function PayrollFlowPrototype() {
                                         salaryMonthDates.map(d => {
                                           const rec = getCellData(emp.id, d);
                                           const hrs = rec?.hours || "";
+                                          const isRedDay = isRed(d);
                                           const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
-                                          const red = isCompanyHoliday;
+                                          
+                                          const bgColor = isRedDay ? "bg-rose-50/40" : "";
+                                          const textColor = isCompanyHoliday ? "text-rose-700" : "text-slate-800";
+                                          
                                           return (
-                                            <td key={d} className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold ${red ? "bg-rose-50/40 text-rose-700" : "text-slate-800"}`}>
+                                            <td key={d} className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold ${bgColor} ${textColor}`}>
                                               {hrs}
                                             </td>
                                           );
