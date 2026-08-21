@@ -5965,6 +5965,10 @@ export default function PayrollFlowPrototype() {
 
                     {/* 인쇄 및 엑셀 다운로드 버튼 */}
                     <div className="flex gap-2">
+                      <button onClick={() => setShowRuleEditor(!showRuleEditor)} className={`px-4 py-1.5 font-medium text-sm rounded-lg transition-colors flex items-center gap-2 ${showRuleEditor ? 'bg-[#FFF2EB] text-[#FD7B37] border border-[#FD7B37]' : 'bg-white border border-[#D6E0EC] text-[#33455E] hover:bg-slate-50'}`}>
+                        <Sliders className="w-4 h-4" />
+                        계산식 설정
+                      </button>
                       <button onClick={() => window.print()} className="px-4 py-1.5 bg-white border border-[#D6E0EC] text-[#33455E] rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors flex items-center gap-2">
                         <Printer className="w-4 h-4" />
                         인쇄
@@ -6120,7 +6124,91 @@ export default function PayrollFlowPrototype() {
                       </tbody>
                     </table>
                   </div>
-                
+                  
+                  {/* 급여 설정 (규칙) 편집기 */}
+                  {showRuleEditor && (
+                    <div className="mt-4 mb-6 bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                      <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-[15px] font-bold text-slate-800 flex items-center gap-2"><Sliders className="w-4 h-4 text-[#FD7B37]"/> 급여 계산식 및 고정값 설정</h3>
+                        <button onClick={() => setShowRuleEditor(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-5 h-5"/></button>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {salaryRules.map((rule, idx) => (
+                           <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                             <select 
+                               className="border border-slate-300 rounded px-2 py-1.5 text-sm bg-white font-medium text-slate-700 focus:outline-none focus:border-[#3D5A80]"
+                               value={rule.target || ''}
+                               onChange={(e) => {
+                                 const newRules = [...salaryRules];
+                                 newRules[idx].target = e.target.value;
+                                 setSalaryRules(newRules);
+                               }}
+                             >
+                               <option value="">적용 항목 선택</option>
+                               <option value="basePay">기본급</option>
+                               <option value="mealAllowance">식대</option>
+                               <option value="fixedOvertime">고정연장수당</option>
+                               <option value="fixedAnnualLeave">고정연차수당</option>
+                               <option value="subtotal">소계</option>
+                               <option value="bonus">상여금</option>
+                               <option value="holidayPay">휴일근로 수당</option>
+                               <option value="totalPay">급여총계</option>
+                               <option value="deduct_pension">국민연금</option>
+                               <option value="deduct_health">건강보험</option>
+                               <option value="deduct_longterm">장기요양</option>
+                               <option value="deduct_employ">고용보험</option>
+                               <option value="deduct_tax">소득세</option>
+                               <option value="deduct_localTax">지방소득세</option>
+                               <option value="netPay">실지급액</option>
+                               <option value="remarks">특이사항</option>
+                             </select>
+                             
+                             <select
+                               className="border border-slate-300 rounded px-2 py-1.5 text-sm bg-white font-medium text-slate-700 focus:outline-none focus:border-[#3D5A80]"
+                               value={rule.type || 'text'}
+                               onChange={(e) => {
+                                 const newRules = [...salaryRules];
+                                 newRules[idx].type = e.target.value;
+                                 setSalaryRules(newRules);
+                               }}
+                             >
+                               <option value="formula">수식(계산)</option>
+                               <option value="text">고정 텍스트/숫자</option>
+                             </select>
+
+                             <span className="text-slate-400">=</span>
+                             <input 
+                               className="flex-1 border border-slate-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#3D5A80]"
+                               value={rule.rawFormula || ''}
+                               onChange={(e) => {
+                                 const newRules = [...salaryRules];
+                                 newRules[idx].rawFormula = e.target.value;
+                                 
+                                 // Simple formula tokenization just for demonstration
+                                 if (newRules[idx].type === 'formula') {
+                                     // Extremely basic logic just to populate something so it doesn't break
+                                     newRules[idx].formula = [{ type: 'number', ref: 0 }]; 
+                                 }
+                                 
+                                 setSalaryRules(newRules);
+                               }}
+                               placeholder={rule.type === 'text' ? "예: 없음, 고정값 등" : "예: [기본급] + [식대] (현재 프로토타입에선 고정 텍스트 위주로 지원)"}
+                             />
+                             <button onClick={() => {
+                                setSalaryRules(salaryRules.filter((_, i) => i !== idx));
+                             }} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors cursor-pointer"><Trash2 className="w-4 h-4"/></button>
+                           </div>
+                        ))}
+
+                        <button onClick={() => {
+                           setSalaryRules([...salaryRules, { target: '', rawFormula: '', type: 'text', formula: [] }]);
+                        }} className="text-[13px] mt-2 px-3 py-2 border border-dashed border-[#D6E0EC] text-slate-500 rounded-lg flex items-center gap-1.5 font-medium hover:text-[#3D5A80] hover:border-[#3D5A80] transition-colors hover:bg-slate-50 w-full justify-center cursor-pointer">
+                          <PlusCircle className="w-4 h-4"/> 계산식/고정값 추가하기
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 
               </div>
             )}
