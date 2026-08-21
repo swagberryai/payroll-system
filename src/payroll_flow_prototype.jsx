@@ -6153,39 +6153,46 @@ export default function PayrollFlowPrototype() {
             {/* ---------------- 급여 관리 탭 ---------------- */}
             {accountingSubtab === "salary" && (
               <div className="animate-in fade-in duration-200">
-                <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                      <Store className="w-5 h-5 text-[#EF7D25]" />
-                      매장 선택
-                    </h2>
-                    <select
-                      value={currentStoreCode}
-                      onChange={(e) => setCurrentStoreCode(e.target.value)}
-                      className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
-                    >
-                      {storeList.map(s => (
-                        <option key={s.code} value={s.code}>{s.name}</option>
-                      ))}
-                    </select>
-                    <span className="text-sm text-slate-500 font-semibold ml-2">
-                      선택한 매장의 급여 데이터를 열람/수정합니다.
-                    </span>
-                  </div>
+                <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
+                  <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Store className="w-5 h-5 text-[#EF7D25]" />
+                    매장 선택
+                  </h2>
+                  <select
+                    value={currentStoreCode}
+                    onChange={(e) => setCurrentStoreCode(e.target.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
+                  >
+                    {storeList.map(s => (
+                      <option key={s.code} value={s.code}>{s.name}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-slate-500 font-semibold ml-2">
+                    선택한 매장의 급여 데이터를 열람/수정합니다.
+                  </span>
+                </div>
 
-                  <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200 w-max print:hidden">
-                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                      <Calendar className="w-5 h-5 text-[#3D5A80]" />
-                      급여 월 선택
-                    </h2>
-                    <div className="flex items-center gap-2">
+                <div className="flex justify-between items-end mb-6 w-full print:hidden">
+                  <div className="flex items-center gap-6">
+                    <div className="flex gap-6 border-b border-[#D6E0EC] w-max">
+                      {["정직원", "아르바이트", "일용직"].map((type) => (
+                        <button key={type} onClick={() => setSalaryGroupTab(type)}
+                          className={`pb-2 px-1 text-[15px] font-semibold transition-all border-b-[2px] ${
+                            salaryGroupTab === type ? "border-[#3D5A80] text-[#33455E]" : "border-transparent text-[#94A3B8] hover:text-[#33455E]"
+                          }`}>{type}</button>
+                      ))}
+                    </div>
+                    
+                    {/* 급여 월 선택기 (적당한 크기로 탭 옆에 배치) */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg shadow-sm mb-1">
+                      <Calendar className="w-4 h-4 text-[#3D5A80]" />
                       <button onClick={() => {
                         const [y, m] = salaryBaseDate.split("-").map(Number);
                         const pm = m === 1 ? 12 : m - 1;
                         const py = m === 1 ? y - 1 : y;
                         setSalaryBaseDate(`${py}-${String(pm).padStart(2, "0")}`);
-                      }} className="w-12 h-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-200 hover:bg-slate-100 cursor-pointer font-black text-slate-600 text-xl transition-colors shadow-sm">‹</button>
-                      <span className="text-xl font-black text-slate-900 min-w-[130px] text-center tracking-tight">
+                      }} className="w-7 h-7 flex items-center justify-center rounded bg-slate-50 border border-slate-200 hover:bg-slate-100 cursor-pointer font-bold text-slate-600 transition-colors">‹</button>
+                      <span className="text-sm font-extrabold text-slate-800 min-w-[80px] text-center tracking-tight">
                         {(() => {
                           const [y, m] = salaryBaseDate.split("-");
                           return `${y}년 ${parseInt(m, 10)}월`;
@@ -6196,19 +6203,8 @@ export default function PayrollFlowPrototype() {
                         const nm = m === 12 ? 1 : m + 1;
                         const ny = m === 12 ? y + 1 : y;
                         setSalaryBaseDate(`${ny}-${String(nm).padStart(2, "0")}`);
-                      }} className="w-12 h-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-200 hover:bg-slate-100 cursor-pointer font-black text-slate-600 text-xl transition-colors shadow-sm">›</button>
+                      }} className="w-7 h-7 flex items-center justify-center rounded bg-slate-50 border border-slate-200 hover:bg-slate-100 cursor-pointer font-bold text-slate-600 transition-colors">›</button>
                     </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-between items-center mb-6 w-full print:hidden">
-                  <div className="flex gap-6 border-b border-[#D6E0EC] w-max">
-                    {["정직원", "아르바이트", "일용직"].map((type) => (
-                      <button key={type} onClick={() => setSalaryGroupTab(type)}
-                        className={`pb-2 px-1 text-[15px] font-semibold transition-all border-b-[2px] ${
-                          salaryGroupTab === type ? "border-[#3D5A80] text-[#33455E]" : "border-transparent text-[#94A3B8] hover:text-[#33455E]"
-                        }`}>{type}</button>
-                    ))}
                   </div>
                   
                   <div className="flex gap-4 items-center">
