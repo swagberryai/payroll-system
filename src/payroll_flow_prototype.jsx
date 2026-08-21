@@ -2798,9 +2798,14 @@ export default function PayrollFlowPrototype() {
     }
     
     // 3자리마다 콤마 포맷팅 (단위가 시간이면 소수점 허용, 숫자가 아닌 문자열이면 그대로 출력)
-    const formattedValue = fieldName.includes("Hours") || fieldName === "workDays" 
-      ? value 
-      : (value ? (isNaN(Number(value)) ? value : Number(value).toLocaleString()) : "");
+    let formattedValue = "";
+    if (value === "60세 이상 미가입") {
+      formattedValue = "60세";
+    } else if (fieldName.includes("Hours") || fieldName === "workDays") {
+      formattedValue = value;
+    } else {
+      formattedValue = value ? (isNaN(Number(value)) ? value : Number(value).toLocaleString()) : "";
+    }
 
     return (
       <td className={`border-r border-[#D6E0EC] relative p-0 h-[40px] bg-white hover:bg-slate-50/50`}>
