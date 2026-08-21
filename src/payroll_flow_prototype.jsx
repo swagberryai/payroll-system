@@ -2829,13 +2829,45 @@ export default function PayrollFlowPrototype() {
     const table = document.getElementById("salary-table");
     if (!table) return;
     const clonedTable = table.cloneNode(true);
+
+    // 엑셀에서 제외할 요소들 (뱃지 등) 제거
+    const excludeItems = clonedTable.querySelectorAll('.excel-exclude');
+    excludeItems.forEach(item => item.remove());
+
     const inputs = clonedTable.querySelectorAll('input');
     inputs.forEach(input => {
       const textNode = document.createTextNode(input.value);
       input.parentNode.replaceChild(textNode, input);
     });
+
+    // 상단 제목 행 추가
+    const thead = clonedTable.querySelector("thead");
+    if (thead) {
+      const titleRow = document.createElement("tr");
+      const titleCell = document.createElement("th");
+      
+      // 첫 번째 혹은 두 번째 행의 셀 개수로 colspan 설정
+      const colCount = clonedTable.rows[1] ? clonedTable.rows[1].cells.length : (clonedTable.rows[0] ? clonedTable.rows[0].cells.length : 10);
+      titleCell.colSpan = colCount;
+      
+      const [year, month] = salaryBaseDate.split("-");
+      const storeName = currentStoreCode; // currentStoreObj는 scope 밖에 있을 수 있으므로 currentStoreCode 사용
+      titleCell.innerText = `${storeName} ${year}년 ${parseInt(month, 10)}월 ${salaryGroupTab} 급여대장`;
+      
+      // 인라인 스타일 부여
+      titleCell.style.fontSize = "20px";
+      titleCell.style.fontWeight = "bold";
+      titleCell.style.textAlign = "center";
+      titleCell.style.padding = "15px";
+      titleCell.style.border = "none";
+      titleCell.style.backgroundColor = "#ffffff";
+      
+      titleRow.appendChild(titleCell);
+      thead.insertBefore(titleRow, thead.firstChild);
+    }
+
     const wb = XLSX.utils.table_to_book(clonedTable, { sheet: "급여대장" });
-    XLSX.writeFile(wb, `${currentStoreObj?.name || '매장'}_${salaryBaseDate}_${salaryGroupTab}_급여대장.xlsx`);
+    XLSX.writeFile(wb, `${currentStoreCode}_${salaryBaseDate}_${salaryGroupTab}_급여대장.xlsx`);
   };
 
   return (
@@ -6530,10 +6562,10 @@ export default function PayrollFlowPrototype() {
                                           {(salaryGroupTab === "아르바이트") && (
                                             <div className="flex items-center gap-0.5 shrink-0 ml-1">
                                               {is4MajorEligible && (
-                                                <span className="w-4 h-4 flex items-center justify-center bg-green-100 text-green-700 border border-green-300 rounded text-[10px] font-black animate-pulse" title="4대보험 대상자">4</span>
+                                                <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-green-100 text-green-700 border border-green-300 rounded text-[10px] font-black animate-pulse" title="4대보험 대상자">4</span>
                                               )}
                                               {emp.resignDate && (
-                                                <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
+                                                <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                               )}
                                             </div>
                                           )}
@@ -6608,7 +6640,7 @@ export default function PayrollFlowPrototype() {
                                         </span>
                                         {emp.resignDate && (
                                           <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                                            <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
+                                            <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                           </div>
                                         )}
                                       </div>
