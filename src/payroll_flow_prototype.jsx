@@ -6483,7 +6483,7 @@ export default function PayrollFlowPrototype() {
                                   const calcEmploymentIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.009 / 10) * 10 : 0;
                                   const calcIncomeTax = Number(emp.incomeTax) || 0;
                                   const calcLocalTax = Number(emp.localTax) || 0;
-                                  const calcOtherDeduction = Number(safeGetPayroll(emp.id, 'otherDeduction')) || 0;
+                                  const calcOtherDeduction = Number(getPayrollCell(emp.id, 'otherDeduction')) || 0;
 
                                   const calcDeductionTotal = calcNationalPension + calcHealthIns + calcLongTermCare + calcEmploymentIns + calcIncomeTax + calcLocalTax + calcOtherDeduction;
 
