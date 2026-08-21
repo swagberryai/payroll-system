@@ -6475,10 +6475,10 @@ export default function PayrollFlowPrototype() {
                                           {(salaryGroupTab === "아르바이트") && (
                                             <div className="flex items-center gap-0.5 shrink-0 ml-1">
                                               {is4MajorEligible && (
-                                                <span className="w-4 h-4 flex items-center justify-center bg-[#E0E7FF] text-[#3730A3] border border-[#C7D2FE] rounded text-[10px] font-black" title="4대보험 대상자">4</span>
+                                                <span className="w-4 h-4 flex items-center justify-center bg-[#E0E7FF] text-[#3730A3] border border-[#C7D2FE] rounded text-[10px] font-black animate-pulse" title="4대보험 대상자">4</span>
                                               )}
                                               {emp.resignDate && (
-                                                <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black" title="퇴직금 대상자">퇴</span>
+                                                <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                               )}
                                             </div>
                                           )}
@@ -6553,7 +6553,7 @@ export default function PayrollFlowPrototype() {
                                         </span>
                                         {emp.resignDate && (
                                           <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                                            <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black" title="퇴직금 대상자">퇴</span>
+                                            <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                           </div>
                                         )}
                                       </div>
