@@ -5988,39 +5988,39 @@ export default function PayrollFlowPrototype() {
                       <thead>
                         {/* Header Row 1 */}
                         <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px' }} rowSpan={2}>NO</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '100px' }} rowSpan={2}>부서</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '80px' }} rowSpan={2}>직책</th>
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '220px', minWidth: '100px' }} rowSpan={2}>성명</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '50px', width: '50px' }} rowSpan={2}>부서</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직책</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '60px', width: '60px' }} rowSpan={2}>성명</th>
                           
                           {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                             <>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>근무일수</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>월정급여</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>시급</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>기본급</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>식대</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>고정연장수당</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>고정연차수당</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>소계</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>상여금</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '50px', minWidth: '50px' }} rowSpan={2}>근무일수</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>월정급여</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '65px', minWidth: '65px' }} rowSpan={2}>시급</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>기본급</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '70px', minWidth: '70px' }} rowSpan={2}>식대</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연장수당</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연차수당</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>소계</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>상여금</th>
                               
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={2}>휴일근로</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={2}>추가휴일연장근로</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" colSpan={2}>지각/조퇴/결근/기타</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>휴일근로</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>추가휴일연장근로</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2] tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>지각/조퇴/결근/기타</th>
                             </>
                           )}
                           
-                          <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>급여총계</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>급여총계</th>
                           {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                             <>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" colSpan={9}>공제내역</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" rowSpan={2}>실지급액</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-widest" style={{ width: '600px', minWidth: '600px' }} colSpan={9}>공제내역</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>실지급액</th>
                               
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>특이사항</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>퇴직연금</th>
-                              <th className="px-3 py-2 border-r border-[#D6E0EC] font-semibold" rowSpan={2}>평균임금</th>
-                              <th className="px-3 py-2 border-slate-300 font-semibold" rowSpan={2}>연봉</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>특이사항</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>퇴직연금</th>
+                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>평균임금</th>
+                              <th className="px-1 py-2 border-slate-300 font-semibold" style={{ width: '80px', minWidth: '80px' }} rowSpan={2}>연봉</th>
                             </>
                           )}
                         </tr>
@@ -6029,26 +6029,26 @@ export default function PayrollFlowPrototype() {
                         <tr className="bg-[#EFF3F9] text-[#33455E] border-b border-[#D6E0EC] text-[12px] font-medium">
                           {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                             <>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">시간</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">수당</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">시간</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">수당</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC] ">시간</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC] ">수당</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
                             </>
                           )}
                           
                           {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                             <>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">국민연금</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">건강보험</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">장기요양</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">고용보험</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">연말(지방세)</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">가지급금</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">소득세</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">지방소득세</th>
-                              <th className="px-2 py-1 border-r border-[#D6E0EC]">공제계</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>국민연금</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>건강보험</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>장기요양</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>고용보험</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>연말(지방세)</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>가지급금</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>소득세</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>지방소득세</th>
+                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>공제계</th>
                             </>
                           )}
                         </tr>
@@ -6058,10 +6058,10 @@ export default function PayrollFlowPrototype() {
                           .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
                           .map((emp, index) => (
                             <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
-                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px' }}>{index + 1}</td>
-                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '100px' }}>{emp.department || ""}</td>
-                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit" style={{ left: '140px', minWidth: '80px' }}>{emp.position || ""}</td>
-                              <td className="px-3 py-2 border-b border-[#D6E0EC] text-left sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '220px', minWidth: '100px' }}>
+                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
+                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
+                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.position || ""}</td>
+                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
                                 <span 
                                   onClick={() => setSelectedEmpProfile(emp)}
                                   className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#7A3416]"}`}
