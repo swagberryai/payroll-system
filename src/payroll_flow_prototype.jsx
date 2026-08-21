@@ -6320,6 +6320,10 @@ export default function PayrollFlowPrototype() {
                   return (
                     <>
                       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto w-full pb-10">
+                        {/* 인쇄 전용 타이틀 */}
+                        <div className="hidden print:block text-center text-[22pt] font-bold py-6">
+                          {currentStoreCode} {sbYear}년 {sbMonth}월 {salaryGroupTab} 급여대장
+                        </div>
                         <table id="salary-table" className="w-full min-w-max border-collapse text-sm text-center whitespace-nowrap">
                           <thead>
                             {/* Header Row 1 */}
@@ -6562,10 +6566,10 @@ export default function PayrollFlowPrototype() {
                                           {(salaryGroupTab === "아르바이트") && (
                                             <div className="flex items-center gap-0.5 shrink-0 ml-1">
                                               {is4MajorEligible && (
-                                                <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-green-100 text-green-700 border border-green-300 rounded text-[10px] font-black animate-pulse" title="4대보험 대상자">4</span>
+                                                <span className="excel-exclude print:hidden w-4 h-4 flex items-center justify-center bg-green-100 text-green-700 border border-green-300 rounded text-[10px] font-black animate-pulse" title="4대보험 대상자">4</span>
                                               )}
                                               {emp.resignDate && (
-                                                <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
+                                                <span className="excel-exclude print:hidden w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                               )}
                                             </div>
                                           )}
@@ -6640,7 +6644,7 @@ export default function PayrollFlowPrototype() {
                                         </span>
                                         {emp.resignDate && (
                                           <div className="flex items-center gap-0.5 shrink-0 ml-1">
-                                            <span className="excel-exclude w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
+                                            <span className="excel-exclude print:hidden w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black animate-pulse" title="퇴직금 대상자">퇴</span>
                                           </div>
                                         )}
                                       </div>
