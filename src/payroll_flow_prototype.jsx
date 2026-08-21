@@ -60,7 +60,8 @@ function compressImage(file, maxSide = 800, quality = 0.7) {
 
 function maskSsn(s) {
   if (!s) return "-";
-  return s.length > 6 ? s.slice(0, 6) + "-●●●●●●●" : s;
+  const front = s.split("-")[0];
+  return front.length >= 6 ? front.slice(0, 6) : front;
 }
 
 function getSsnPrefix(s) {
@@ -3166,6 +3167,13 @@ export default function PayrollFlowPrototype() {
                                     return (
                                       <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border bg-emerald-50 border-emerald-300 text-emerald-700">
                                         <CheckCircle2 className="w-3 h-3" /> 모두 제출
+                                      </span>
+                                    );
+                                  }
+                                  if (missing.length >= 3) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full border bg-rose-50 border-rose-300 text-rose-600 shadow-xs cursor-help" title={`미제출 서류: ${missing.map(d => d.label).join(", ")}`}>
+                                        <AlertCircle className="w-3 h-3" /> 미제출 {missing.length}건 ({missing.map(d => d.label.slice(0, 2)).join("/")})
                                       </span>
                                     );
                                   }
