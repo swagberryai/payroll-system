@@ -3204,8 +3204,8 @@ export default function PayrollFlowPrototype() {
                                     <LogOut className="w-3 h-3"/> 퇴사처리
                                   </button>
                                   {isEligibleForCancelHire(emp) && (
-                                    <button onClick={() => openCancelHireModal(emp.id)} className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="등록 20일 이내 입사취소 (DB 완전삭제)">
-                                      <Trash2 className="w-3 h-3 text-amber-600"/> 입사취소
+                                    <button onClick={() => openCancelHireModal(emp.id)} className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="등록 20일 이내 입사취소 (DB 완전삭제)">
+                                      <Trash2 className="w-3 h-3 text-blue-500"/> 입사취소
                                     </button>
                                   )}
                                 </>
@@ -7017,18 +7017,18 @@ export default function PayrollFlowPrototype() {
         const targetEmp = employees.find(e => e.id === cancelHireEmpId);
         return (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-amber-200 flex flex-col space-y-0">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-blue-100 flex flex-col space-y-0">
               {/* 헤더 */}
-              <div className="px-7 py-5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+              <div className="px-7 py-5 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
                     <Trash2 className="w-6 h-6" />
                   </div>
-                  <h3 className="text-xl font-black text-amber-950">입사 취소 처리 (노쇼 / 미출근)</h3>
+                  <h3 className="text-xl font-black text-blue-950">입사 취소 처리 (노쇼 / 미출근)</h3>
                 </div>
                 <button
                   onClick={() => setIsCancelHireModalOpen(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-amber-100/50 transition-colors cursor-pointer"
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-blue-100/50 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -7038,11 +7038,11 @@ export default function PayrollFlowPrototype() {
               <div className="p-8 space-y-6 text-center">
                 <div className="space-y-3">
                   <div className="text-2xl font-extrabold text-slate-900 leading-snug">
-                    <span className="text-amber-600 font-black px-1">{targetEmp?.name || "선택한"}</span> 직원의 입사를 취소하시겠습니까?
+                    <span className="text-blue-600 font-black px-1">{targetEmp?.name || "선택한"}</span> 직원의 입사를 취소하시겠습니까?
                   </div>
                   <p className="text-sm font-bold text-slate-500 leading-relaxed">
                     입사 취소 시 해당 사원의 모든 신상 및 서류 정보가 <strong className="text-rose-600 font-black">DB에서 완전히 삭제(Wipe)</strong>되며 복구되지 않습니다.
-                    <br />확인을 위해 아래 입력창에 <strong className="text-amber-600 font-black">'입사취소'</strong>라고 적어주세요.
+                    <br />확인을 위해 아래 입력창에 <strong className="text-blue-600 font-black">'입사취소'</strong>라고 적어주세요.
                   </p>
                 </div>
 
@@ -7053,7 +7053,7 @@ export default function PayrollFlowPrototype() {
                     onChange={(e) => setCancelHireInputText(e.target.value)}
                     placeholder="입사취소"
                     autoFocus
-                    className="w-full text-center text-lg font-black tracking-wider border-2 border-slate-300 focus:border-amber-500 rounded-2xl py-3 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
+                    className="w-full text-center text-lg font-black tracking-wider border-2 border-slate-300 focus:border-blue-500 rounded-2xl py-3 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
                   />
                 </div>
               </div>
@@ -7069,7 +7069,7 @@ export default function PayrollFlowPrototype() {
                 <button
                   onClick={confirmCancelHire}
                   disabled={cancelHireInputText.trim() !== "입사취소"}
-                  className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
                 >
                   <Trash2 className="w-4 h-4" />
                   입사취소 실행 (DB 완전삭제)
