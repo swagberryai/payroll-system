@@ -7,8 +7,9 @@ import {
 import * as firebaseService from "../firebaseService";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
-const ATTEND_TYPES = ["정상출근", "휴무", "결근", "연차", "반차", "지각", "조퇴", "기타"];
 const DEPARTMENTS = ["서비스", "일식", "핫/즉석", "샐러드/베이커리", "세척/찬모"];
+const POSITIONS = ["팀원", "캡틴", "파트장", "메니저", "부센터장", "센터장", "팀장", "부점장", "점장", "실장", "본부장", "이사", "상무", "전무", "임원"];
+const RANKS = ["사원", "주임", "대리", "과장", "차장", "부장", "이사", "대표", "대표이사"];
 
 // 담당 부서별 서류 정의
 const ACCOUNTING_DOCS = [
@@ -6534,15 +6535,51 @@ export default function PayrollFlowPrototype() {
                     </div>
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">부서</div>
-                      {profileEditMode ? renderBasicInput('department', '부서 입력 (예: 조리팀)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.department || profileEditForm.dept || "-"}</div>}
+                      {profileEditMode ? (
+                        <select 
+                          value={profileEditForm.department || profileEditForm.dept || ''} 
+                          onChange={(e) => {
+                            handleProfileFormChange('department', e.target.value);
+                            handleProfileFormChange('dept', e.target.value);
+                          }}
+                          className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37]"
+                        >
+                          <option value="">(부서 선택)</option>
+                          {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.department || profileEditForm.dept || "-"}</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">직책</div>
-                      {profileEditMode ? renderBasicInput('position', '직책 입력 (예: 팀장, 매니저)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.position || "-"}</div>}
+                      {profileEditMode ? (
+                        <select 
+                          value={profileEditForm.position || ''} 
+                          onChange={(e) => handleProfileFormChange('position', e.target.value)}
+                          className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37]"
+                        >
+                          <option value="">(직책 선택)</option>
+                          {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.position || "-"}</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">직급</div>
-                      {profileEditMode ? renderBasicInput('rank', '직급 입력 (예: 1급, 2급, 주임)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.rank || "-"}</div>}
+                      {profileEditMode ? (
+                        <select 
+                          value={profileEditForm.rank || ''} 
+                          onChange={(e) => handleProfileFormChange('rank', e.target.value)}
+                          className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37]"
+                        >
+                          <option value="">(직급 선택)</option>
+                          {RANKS.map(r => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.rank || "-"}</div>
+                      )}
                     </div>
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">입사일</div>
