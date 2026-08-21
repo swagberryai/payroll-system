@@ -672,13 +672,22 @@ export default function PayrollFlowPrototype() {
     }
   };
 
-  const handleResign = () => {
-    if (confirm(`${profileEditForm.name} 직원을 퇴사 처리하시겠습니까?`)) {
-      const today = new Date().toISOString().split('T')[0];
-      handleProfileFormChange('resignDate', today);
-      handleProfileFormChange('status', '퇴사');
-      alert(`퇴사일이 ${today}로 설정되었습니다. 프로필의 '저장' 버튼을 눌러 적용해주세요.`);
-    }
+  const [isProfileResignModalOpen, setIsProfileResignModalOpen] = useState(false);
+  const [profileResignInputText, setProfileResignInputText] = useState("");
+
+  const openProfileResignModal = () => {
+    setProfileResignInputText("");
+    setIsProfileResignModalOpen(true);
+  };
+
+  const confirmProfileResignation = () => {
+    if (profileResignInputText.trim() !== "퇴사처리") return;
+    const today = new Date().toISOString().split('T')[0];
+    handleProfileFormChange('resignDate', today);
+    handleProfileFormChange('status', '퇴사');
+    setIsProfileResignModalOpen(false);
+    setProfileResignInputText("");
+    flash(`${profileEditForm?.name || "해당"} 직원의 퇴사일이 ${today}로 설정되었습니다. 프로필의 '저장' 버튼을 눌러 확정해주세요.`);
   };
   const [dismissedSuspectedAlerts, setDismissedSuspectedAlerts] = useState([]); // 퇴직 의심 알림 닫기 상태
   const [dismissedSeveranceAlerts, setDismissedSeveranceAlerts] = useState([]); // 퇴직금 발생 알림 닫기 상태
@@ -6481,7 +6490,7 @@ export default function PayrollFlowPrototype() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={handleResign} className="px-3 py-1.5 bg-red-50 text-red-600 font-semibold text-[13px] rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1 cursor-pointer">
+                  <button onClick={openProfileResignModal} className="px-3 py-1.5 bg-red-50 text-red-600 font-semibold text-[13px] rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1 cursor-pointer">
                     <UserX className="w-4 h-4" /> 퇴사처리
                   </button>
                   <button onClick={() => setSelectedEmpProfile(null)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
@@ -6775,17 +6784,82 @@ export default function PayrollFlowPrototype() {
           </div>
         );
         } catch(e) {
-            console.error("MODAL ERROR:", e);
-            return (
-              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4">
-                 <div className="bg-white p-8 rounded text-red-500 font-semibold">
-                    <h1>에러 발생!</h1>
-                    <p>{e.toString()}</p>
-                 </div>
-              </div>
-            );
+          console.error("MODAL ERROR:", e);
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4">
+               <div className="bg-white p-8 rounded text-red-500 font-semibold">
+                  <h1>에러 발생!</h1>
+                  <p>{e.toString()}</p>
+               </div>
+            </div>
+          );
         }
       })()}
+
+      {/* 🚨 퇴사 처리 확인 커스텀 모달 (localhost 얼럿 대용) */}
+      {isProfileResignModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-rose-100 flex flex-col space-y-0">
+            {/* 헤더 */}
+            <div className="px-7 py-5 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <h3 className="text-xl font-black text-rose-950">퇴사 처리 확인</h3>
+              </div>
+              <button
+                onClick={() => setIsProfileResignModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-rose-100/50 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 본문 */}
+            <div className="p-8 space-y-6 text-center">
+              <div className="space-y-3">
+                <div className="text-2xl font-extrabold text-slate-900 leading-snug">
+                  <span className="text-rose-600 font-black px-1">{profileEditForm?.name}</span> 직원을 퇴사 처리하시겠습니까?
+                </div>
+                <p className="text-base font-bold text-slate-500">
+                  실수로 인한 퇴사 처리를 방지하기 위해 아래 입력창에 <strong className="text-rose-600 font-black">'퇴사처리'</strong>라고 적어주세요.
+                </p>
+              </div>
+
+              <div className="max-w-xs mx-auto pt-2">
+                <input
+                  type="text"
+                  value={profileResignInputText}
+                  onChange={(e) => setProfileResignInputText(e.target.value)}
+                  placeholder="퇴사처리"
+                  autoFocus
+                  className="w-full text-center text-xl font-black tracking-wider border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-3.5 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div className="px-7 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setIsProfileResignModalOpen(false)}
+                className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-colors cursor-pointer text-sm"
+              >
+                취소
+              </button>
+              <button
+                onClick={confirmProfileResignation}
+                disabled={profileResignInputText.trim() !== "퇴사처리"}
+                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
+              >
+                <UserX className="w-4 h-4" />
+                퇴사 처리 확정
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 🏝️ 공휴일 날짜 추가 모달 */}
       {isHolidayModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
