@@ -635,6 +635,42 @@ export default function PayrollFlowPrototype() {
   const [empSearchTerm, setEmpSearchTerm] = useState("");
   const [empSortConfig, setEmpSortConfig] = useState({ key: "storeCode", direction: "asc" }); // 정렬 상태
   const [selectedEmpProfile, setSelectedEmpProfile] = useState(null); // 모달 표시용 직원 정보
+  const [profileEditMode, setProfileEditMode] = useState(false);
+  const [profileEditForm, setProfileEditForm] = useState({});
+
+  useEffect(() => {
+    if (selectedEmpProfile) {
+      setProfileEditForm({ ...selectedEmpProfile });
+      setProfileEditMode(false);
+    }
+  }, [selectedEmpProfile]);
+
+  const handleProfileFormChange = (key, value) => {
+    setProfileEditForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleProfileSave = async () => {
+    try {
+      if (profileEditForm.id) {
+        await firebaseService.updateEmployee(profileEditForm.id, profileEditForm);
+        setEmployees(prev => prev.map(e => e.id === profileEditForm.id ? { ...e, ...profileEditForm } : e));
+        setProfileEditMode(false);
+        alert('저장되었습니다.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('저장 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleResign = () => {
+    if (confirm(`${profileEditForm.name} 직원을 퇴사 처리하시겠습니까?`)) {
+      const today = new Date().toISOString().split('T')[0];
+      handleProfileFormChange('resignDate', today);
+      handleProfileFormChange('status', '퇴사');
+      alert(`퇴사일이 ${today}로 설정되었습니다. 프로필의 '저장' 버튼을 눌러 적용해주세요.`);
+    }
+  };
   const [dismissedSuspectedAlerts, setDismissedSuspectedAlerts] = useState([]); // 퇴직 의심 알림 닫기 상태
   const [dismissedSeveranceAlerts, setDismissedSeveranceAlerts] = useState([]); // 퇴직금 발생 알림 닫기 상태
   
