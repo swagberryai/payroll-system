@@ -628,7 +628,15 @@ export default function PayrollFlowPrototype() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
   const [payrollData, setPayrollData] = useState([]);
-  const [salaryRules, setSalaryRules] = useState([]);
+  const [salaryRules, setSalaryRules] = useState([
+    { target: 'basePay', type: 'text', rawFormula: '정상 근무시간 * 프로필 시급', formula: [] },
+    { target: 'otPay', type: 'text', rawFormula: '(연장 근무시간 * 프로필 시급) * 1.5', formula: [] },
+    { target: 'holidayPay', type: 'text', rawFormula: '(휴일 근무시간 * 프로필 시급) * 1.5', formula: [] },
+    { target: 'grossPay', type: 'text', rawFormula: '기본급 + 연장수당 + 휴일수당', formula: [] },
+    { target: 'healthIns', type: 'text', rawFormula: '급여합계 * 3.595% (10원 단위 절사)', formula: [] },
+    { target: 'longTermCare', type: 'text', rawFormula: '건강보험료 * 13.14% (10원 단위 절사)', formula: [] },
+    { target: 'employmentIns', type: 'text', rawFormula: '급여합계 * 0.9% (10원 단위 절사)', formula: [] }
+  ]);
   const [showRuleEditor, setShowRuleEditor] = useState(false);
   const [hrSubtab, setHrSubtab] = useState("confirm");
 
@@ -6666,19 +6674,21 @@ export default function PayrollFlowPrototype() {
                              >
                                <option value="">적용 항목 선택</option>
                                <option value="basePay">기본급</option>
+                               <option value="otPay">연장수당</option>
                                <option value="mealAllowance">식대</option>
                                <option value="fixedOvertime">고정연장수당</option>
                                <option value="fixedAnnualLeave">고정연차수당</option>
                                <option value="subtotal">소계</option>
                                <option value="bonus">상여금</option>
                                <option value="holidayPay">휴일근로 수당</option>
-                               <option value="totalPay">급여총계</option>
-                               <option value="deduct_pension">국민연금</option>
-                               <option value="deduct_health">건강보험</option>
-                               <option value="deduct_longterm">장기요양</option>
-                               <option value="deduct_employ">고용보험</option>
-                               <option value="deduct_tax">소득세</option>
-                               <option value="deduct_localTax">지방소득세</option>
+                               <option value="grossPay">급여합계</option>
+                               <option value="totalPay">급여총계(정직원)</option>
+                               <option value="nationalPension">국민연금</option>
+                               <option value="healthIns">건강보험</option>
+                               <option value="longTermCare">장기요양</option>
+                               <option value="employmentIns">고용보험</option>
+                               <option value="incomeTax">소득세</option>
+                               <option value="localTax">지방소득세</option>
                                <option value="netPay">실지급액</option>
                                <option value="remarks">특이사항</option>
                              </select>
