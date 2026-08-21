@@ -6068,7 +6068,7 @@ export default function PayrollFlowPrototype() {
                               <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
                                 <span 
                                   onClick={() => setSelectedEmpProfile(emp)}
-                                  className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#7A3416]"}`}
+                                  className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
                                 >
                                   {emp.name}
                                 </span>
