@@ -7,6 +7,7 @@ import {
 import * as firebaseService from "../firebaseService";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
+const ATTEND_TYPES = ["정상근무", "연차", "반차", "조퇴", "결근", "휴일근무", "기타"];
 const DEPARTMENTS = ["서비스", "일식", "핫/즉석", "샐러드", "베이커리", "세척/찬모"];
 const POSITIONS = ["팀원", "캡틴", "파트장", "메니저", "부센터장", "센터장", "팀장", "부점장", "점장", "실장", "본부장", "이사", "상무", "전무", "임원"];
 const RANKS = ["사원", "주임", "대리", "과장", "차장", "부장", "이사", "대표", "대표이사"];
