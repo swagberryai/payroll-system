@@ -808,15 +808,28 @@ export default function PayrollFlowPrototype() {
   const isEligibleForCancelHire = (emp) => {
     if (!emp || emp.resignDate || emp.status === "퇴사") return false;
     const now = new Date();
-    
-    // 1. 등록일(createdAt) 기준 20일 이내
+    const todayStr = getKstDateString(now);
+
+    // 1. 과거 날짜 (어제 이전 날짜 date < todayStr)에 실제 일한 근무/근태 기록이 있는지 확인 (24시 경과로 확정된 근무)
+    const hasPastConfirmedWork = Array.isArray(attendance) && attendance.some(a => {
+      const isEmpMatch = (a.employeeId === emp.id || a.empId === emp.id);
+      if (!isEmpMatch) return false;
+      const isPastDate = a.date && a.date < todayStr;
+      const hasWorked = (a.hours && Number(a.hours) > 0) || a.type === "근무" || a.type === "정상출근" || a.attendanceType === "근무";
+      return isPastDate && hasWorked;
+    });
+
+    // 어제 이전 날짜에 단 1시간이라도 일한 기록이 있다면 자정(24시)이 지나 확정되었으므로 입사취소 불가
+    if (hasPastConfirmedWork) return false;
+
+    // 2. 등록일(createdAt) 기준 20일 이내
     if (emp.createdAt) {
       const created = emp.createdAt.toDate ? emp.createdAt.toDate() : new Date(emp.createdAt);
       const diffDays = (now - created) / (1000 * 60 * 60 * 24);
       if (diffDays <= 20) return true;
     }
 
-    // 2. 입사일(hireDate) 기준 20일 이내 또는 미래 입사 예정
+    // 3. 입사일(hireDate) 기준 20일 이내 또는 미래 입사 예정
     if (emp.hireDate) {
       const hire = new Date(emp.hireDate);
       const diffDays = (now - hire) / (1000 * 60 * 60 * 24);
@@ -948,7 +961,7 @@ export default function PayrollFlowPrototype() {
   // 사원등록 폼 초기값
   const emptyForm = {
     name: "", ssn: "", phone: "", hireDate: "", resignDate: "", account: "",
-    position: "", dept: "", employmentType: "아르바이트", storeCode: currentStoreCode || "고메스퀘어 부천점",
+    position: "팀원", rank: "사원", dept: "서비스", employmentType: "아르바이트", monthlySalary: "", _payroll_monthlySalary: "", hourlyWage: "13000", weekdayWage: "", weekendWage: "", storeCode: currentStoreCode || "고메스퀘어 부천점",
     idCard: null, bankbook: null, healthCert: null, contract: null,
   };
   const [form, setForm] = useState(emptyForm);
@@ -1048,9 +1061,15 @@ export default function PayrollFlowPrototype() {
       hireDate: emp.hireDate || "",
       resignDate: emp.resignDate || "",
       account: emp.account || "",
-      position: emp.position || "",
-      dept: emp.dept || "",
+      position: emp.position || "팀원",
+      rank: emp.rank || "사원",
+      dept: emp.dept || emp.department || "서비스",
       employmentType: emp.employmentType || "아르바이트",
+      monthlySalary: emp.monthlySalary || emp._payroll_monthlySalary || "",
+      _payroll_monthlySalary: emp._payroll_monthlySalary || emp.monthlySalary || "",
+      hourlyWage: emp.hourlyWage || emp.hourlyRate || "13000",
+      weekdayWage: emp.weekdayWage || emp.weekdayDailyWage || "",
+      weekendWage: emp.weekendWage || emp.weekendDailyWage || "",
       storeCode: emp.storeCode || currentStoreCode,
       idCard: emp.idCard || null,
       bankbook: emp.bankbook || null,
@@ -1088,12 +1107,22 @@ export default function PayrollFlowPrototype() {
 
     setFormError("");
     try {
+      const payload = {
+        ...form,
+        department: form.employmentType === "정직원" ? (form.dept || form.department || "서비스") : "",
+        dept: form.employmentType === "정직원" ? (form.dept || form.department || "서비스") : "",
+        _payroll_monthlySalary: form.employmentType === "정직원" ? (form.monthlySalary || form._payroll_monthlySalary || "") : "",
+        hourlyWage: form.employmentType === "아르바이트" ? (form.hourlyWage || "13000") : "",
+        weekdayWage: form.employmentType === "일용직" ? (form.weekdayWage || "") : "",
+        weekendWage: form.employmentType === "일용직" ? (form.weekendWage || "") : "",
+        storeCode: currentStoreCode
+      };
       if (editingEmpId) {
-        await firebaseService.updateEmployee(editingEmpId, { ...form, storeCode: currentStoreCode }, "store_user");
+        await firebaseService.updateEmployee(editingEmpId, payload, "store_user");
         flash(`"${form.name}" 사원의 서류 및 정보 수정이 저장되었습니다.`);
         setEditingEmpId(null);
       } else {
-        await firebaseService.registerEmployee({ ...form, storeCode: currentStoreCode }, currentStoreCode, "store_user");
+        await firebaseService.registerEmployee(payload, currentStoreCode, "store_user");
         flash(`${form.name}님 사원등록 및 서류가 저장되었습니다.`);
       }
       setForm(emptyForm);
@@ -3069,7 +3098,7 @@ export default function PayrollFlowPrototype() {
               </div>
 
               <div className="text-xs font-bold text-slate-600 bg-slate-100 px-4 py-2 rounded-xl border border-slate-200">
-                소속 직원: <strong className="text-[#EF7D25] text-sm font-black ml-1">{currentStoreEmployees.length}명</strong>
+                소속 직원: <strong className="text-[#EF7D25] text-sm font-black ml-1">{currentStoreEmployees.filter(e => !e.resignDate && e.status !== "퇴사").length}명</strong>
               </div>
             </div>
 
@@ -3186,6 +3215,11 @@ export default function PayrollFlowPrototype() {
                               </div>
                             </td>
                             <td className="px-6 py-4 flex justify-end gap-2">
+                              {empListGroupTab !== "퇴사자" && isEligibleForCancelHire(emp) && (
+                                <button onClick={() => openCancelHireModal(emp.id)} className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="등록 20일 이내 입사취소 (DB 완전삭제)">
+                                  <Trash2 className="w-3 h-3 text-blue-500"/> 입사취소
+                                </button>
+                              )}
                               <button onClick={() => { 
                                   setForm({...emp}); 
                                   setEditingEmpId(emp.id); 
@@ -3194,21 +3228,14 @@ export default function PayrollFlowPrototype() {
                                 <Edit3 className="w-3 h-3"/> 정보수정
                               </button>
                               {empListGroupTab !== "퇴사자" && (
-                                <>
-                                  <button onClick={() => {
-                                    setResigningEmpId(emp.id);
-                                    setResignTextInput("");
-                                    setResignDateInput(new Date().toISOString().split('T')[0]);
-                                    setIsResignModalOpen(true);
-                                  }} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
-                                    <LogOut className="w-3 h-3"/> 퇴사처리
-                                  </button>
-                                  {isEligibleForCancelHire(emp) && (
-                                    <button onClick={() => openCancelHireModal(emp.id)} className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="등록 20일 이내 입사취소 (DB 완전삭제)">
-                                      <Trash2 className="w-3 h-3 text-blue-500"/> 입사취소
-                                    </button>
-                                  )}
-                                </>
+                                <button onClick={() => {
+                                  setResigningEmpId(emp.id);
+                                  setResignTextInput("");
+                                  setResignDateInput(new Date().toISOString().split('T')[0]);
+                                  setIsResignModalOpen(true);
+                                }} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
+                                  <LogOut className="w-3 h-3"/> 퇴사처리
+                                </button>
                               )}
                             </td>
                           </tr>
@@ -4215,7 +4242,7 @@ export default function PayrollFlowPrototype() {
 
                   <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
                     {storeList.map((st) => {
-                      const empCount = employees.filter((e) => isMatchStore(e.storeCode, st)).length;
+                      const empCount = employees.filter((e) => isMatchStore(e.storeCode, st) && !e.resignDate && e.status !== "퇴사").length;
                       const isEditingThisStore = editingStoreId === st.id;
 
                       return (
@@ -6362,12 +6389,85 @@ export default function PayrollFlowPrototype() {
                   <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">고정됨</span>
                 </div>
               </div>
-              <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => setForm({ ...form, employmentType: v })} />
-              {form.employmentType === "정직원" && (
+              <Select label="고용형태 *" value={form.employmentType} options={EMPLOYMENT_TYPES} onChange={(v) => {
+                const isFullTime = v === "정직원";
+                setForm({ 
+                  ...form, 
+                  employmentType: v, 
+                  hourlyWage: isFullTime ? "" : (form.hourlyWage || "13000") 
+                });
+              }} />
+              
+              {form.employmentType === "정직원" ? (
                 <>
-                  <Field label="직책" value={form.position} onChange={(v) => setForm({ ...form, position: v })} placeholder="예: 매니저, 팀원" />
-                  <Select label="부서" value={form.dept} options={DEPARTMENTS} onChange={(v) => setForm({ ...form, dept: v })} showDefaultOption={true} />
+                  <Select label="부서" value={form.dept || form.department} options={DEPARTMENTS} onChange={(v) => setForm({ ...form, dept: v, department: v })} showDefaultOption={true} />
+                  <Select label="직책" value={form.position} options={POSITIONS} onChange={(v) => setForm({ ...form, position: v })} showDefaultOption={true} />
+                  <Select label="직급" value={form.rank} options={RANKS} onChange={(v) => setForm({ ...form, rank: v })} showDefaultOption={true} />
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">월정급여 (원)</label>
+                    <input 
+                      type="text"
+                      value={form.monthlySalary ? Number(form.monthlySalary.toString().replace(/,/g, '')).toLocaleString() : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/,/g, '');
+                        if (/^\d*$/.test(raw)) {
+                          setForm({ ...form, monthlySalary: raw, _payroll_monthlySalary: raw });
+                        }
+                      }}
+                      placeholder="예: 3,000,000"
+                      className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] focus:border-transparent transition-all shadow-xs placeholder:text-slate-400 bg-white"
+                    />
+                  </div>
                 </>
+              ) : form.employmentType === "일용직" ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">평일일급 (원)</label>
+                    <input 
+                      type="text"
+                      value={form.weekdayWage ? Number(form.weekdayWage.toString().replace(/,/g, '')).toLocaleString() : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/,/g, '');
+                        if (/^\d*$/.test(raw)) {
+                          setForm({ ...form, weekdayWage: raw });
+                        }
+                      }}
+                      placeholder="예: 130,000"
+                      className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] focus:border-transparent transition-all shadow-xs placeholder:text-slate-400 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">주말일급 (원)</label>
+                    <input 
+                      type="text"
+                      value={form.weekendWage ? Number(form.weekendWage.toString().replace(/,/g, '')).toLocaleString() : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/,/g, '');
+                        if (/^\d*$/.test(raw)) {
+                          setForm({ ...form, weekendWage: raw });
+                        }
+                      }}
+                      placeholder="예: 150,000"
+                      className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] focus:border-transparent transition-all shadow-xs placeholder:text-slate-400 bg-white"
+                    />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1.5">시급 (원)</label>
+                  <input 
+                    type="text"
+                    value={form.hourlyWage ? Number(form.hourlyWage.toString().replace(/,/g, '')).toLocaleString() : '13,000'}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/,/g, '');
+                      if (/^\d*$/.test(raw)) {
+                        setForm({ ...form, hourlyWage: raw });
+                      }
+                    }}
+                    placeholder="13,000"
+                    className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] focus:border-transparent transition-all shadow-xs placeholder:text-slate-400 bg-white"
+                  />
+                </div>
               )}
             </div>
 
