@@ -2797,10 +2797,10 @@ export default function PayrollFlowPrototype() {
       value = calculateCell(empId, fieldName);
     }
     
-    // 3자리마다 콤마 포맷팅 (단위가 시간이면 소수점 허용)
+    // 3자리마다 콤마 포맷팅 (단위가 시간이면 소수점 허용, 숫자가 아닌 문자열이면 그대로 출력)
     const formattedValue = fieldName.includes("Hours") || fieldName === "workDays" 
       ? value 
-      : (value ? Number(value).toLocaleString() : "");
+      : (value ? (isNaN(Number(value)) ? value : Number(value).toLocaleString()) : "");
 
     return (
       <td className={`border-r border-[#D6E0EC] relative p-0 h-[40px] bg-white hover:bg-slate-50/50`}>
@@ -6494,7 +6494,8 @@ export default function PayrollFlowPrototype() {
                                   const calcGrossPay = calcBasePay + calcOtPay + calcHolidayPay;
 
                                   // 공제액 계산 (10원 단위 절사)
-                                  const calcNationalPension = Number(emp.nationalPension) || 0;
+                                  const calcNationalPension = emp.nationalPension === '60세 이상 미가입' ? '60세' : (Number(emp.nationalPension) || 0);
+                                  const calcNationalPensionNum = isNaN(Number(calcNationalPension)) ? 0 : Number(calcNationalPension);
                                   const calcHealthIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.03595 / 10) * 10 : 0;
                                   const calcLongTermCare = is4MajorEligible ? Math.floor(calcHealthIns * 0.1314 / 10) * 10 : 0;
                                   const calcEmploymentIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.009 / 10) * 10 : 0;
@@ -6502,7 +6503,7 @@ export default function PayrollFlowPrototype() {
                                   const calcLocalTax = Number(emp.localTax) || 0;
                                   const calcOtherDeduction = Number(getPayrollCell(emp.id, 'otherDeduction')) || 0;
 
-                                  const calcDeductionTotal = calcNationalPension + calcHealthIns + calcLongTermCare + calcEmploymentIns + calcIncomeTax + calcLocalTax + calcOtherDeduction;
+                                  const calcDeductionTotal = calcNationalPensionNum + calcHealthIns + calcLongTermCare + calcEmploymentIns + calcIncomeTax + calcLocalTax + calcOtherDeduction;
 
                                   const calcNetPay = calcGrossPay - calcDeductionTotal;
 
