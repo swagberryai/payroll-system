@@ -2591,7 +2591,7 @@ export default function PayrollFlowPrototype() {
               handleCellChange(empId, fieldName, rawValue, isCalculated ? true : false);
             }
           }}
-          className={`w-full h-full px-2 py-1 text-center outline-none bg-transparent focus:bg-white focus:ring-2 focus:ring-[#3D5A80] focus:z-10 absolute inset-0 ${isCalculated && !isOverride ? "text-slate-500 font-medium" : "text-slate-900 font-semibold"} ${isOverride ? "text-[#EF7D25]" : ""}`}
+          className={`w-full h-full px-2 py-1 text-right outline-none bg-transparent focus:bg-white focus:ring-2 focus:ring-[#3D5A80] focus:z-10 absolute inset-0 ${isCalculated && !isOverride ? "text-slate-500 font-medium" : "text-slate-900 font-semibold"} ${isOverride ? "text-[#EF7D25]" : ""}`}
         />
       </td>
     );
