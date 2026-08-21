@@ -674,19 +674,20 @@ export default function PayrollFlowPrototype() {
 
   const [isProfileResignModalOpen, setIsProfileResignModalOpen] = useState(false);
   const [profileResignInputText, setProfileResignInputText] = useState("");
+  const [profileResignDateInput, setProfileResignDateInput] = useState(() => new Date().toISOString().split('T')[0]);
 
   const openProfileResignModal = () => {
     setProfileResignInputText("");
+    setProfileResignDateInput(new Date().toISOString().split('T')[0]);
     setIsProfileResignModalOpen(true);
   };
 
   const confirmProfileResignation = async () => {
-    if (profileResignInputText.trim() !== "퇴사처리" || !profileEditForm?.id) return;
+    if (profileResignInputText.trim() !== "퇴사처리" || !profileResignDateInput || !profileEditForm?.id) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
       const updatedProfile = {
         ...profileEditForm,
-        resignDate: today,
+        resignDate: profileResignDateInput,
         status: '퇴사'
       };
       
@@ -795,7 +796,8 @@ export default function PayrollFlowPrototype() {
   const [empListGroupTab, setEmpListGroupTab] = useState("정직원"); // 정직원, 아르바이트, 일용직, 퇴사자
   const [isResignModalOpen, setIsResignModalOpen] = useState(false);
   const [resigningEmpId, setResigningEmpId] = useState(null);
-  const [resignDateInput, setResignDateInput] = useState("");
+  const [resignDateInput, setResignDateInput] = useState(() => new Date().toISOString().split('T')[0]);
+  const [resignTextInput, setResignTextInput] = useState("");
 
   // 근로조건 설정 Config 상태 (localStorage 연동)
   const [laborConfig, setLaborConfig] = useState(() => {
@@ -6353,63 +6355,106 @@ export default function PayrollFlowPrototype() {
       )}
 
             {/* 🚪 퇴사 처리 모달 */}
-      {isResignModalOpen && (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
-            <button onClick={() => setIsResignModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer">
-              <X className="w-6 h-6" />
-            </button>
-            <div className="flex items-center gap-2 text-xl font-semibold text-slate-900 mb-6">
-              <LogOut className="w-6 h-6 text-rose-600" />
-              <h2>직원 퇴사 처리</h2>
-            </div>
-            
-            <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-              퇴사일을 입력해주세요. 퇴사 처리된 직원은 <strong>[퇴사자]</strong> 탭으로 이동하며, 이후 근태 입력 및 급여 계산 명단에서 제외됩니다.
-            </p>
+      {/* 🚪 매장관리자 퇴사 처리 모달 */}
+      {isResignModalOpen && (() => {
+        const targetEmp = employees.find(e => e.id === resigningEmpId);
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-rose-100 flex flex-col space-y-0">
+              {/* 헤더 */}
+              <div className="px-7 py-5 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-xl font-black text-rose-950">퇴사 처리 확인</h3>
+                </div>
+                <button
+                  onClick={() => setIsResignModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-rose-100/50 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-            <div className="mb-8">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">퇴사일 *</label>
-              <input 
-                type="date" 
-                value={resignDateInput}
-                onChange={(e) => setResignDateInput(e.target.value)}
-                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
-              />
-            </div>
+              {/* 본문 */}
+              <div className="p-8 space-y-6 text-center">
+                <div className="space-y-3">
+                  <div className="text-2xl font-extrabold text-slate-900 leading-snug">
+                    <span className="text-rose-600 font-black px-1">{targetEmp?.name || "선택한"}</span> 직원을 퇴사 처리하시겠습니까?
+                  </div>
+                  <p className="text-base font-bold text-slate-500">
+                    실수로 인한 퇴사 처리를 방지하기 위해 아래 입력창에 <strong className="text-rose-600 font-black">'퇴사처리'</strong>를 적고 퇴사일을 선택해 주세요.
+                  </p>
+                </div>
 
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setIsResignModalOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
-                취소
-              </button>
-              <button
-                onClick={async () => {
-                  if (!resignDateInput) {
-                    alert("퇴사일을 입력해주세요.");
-                    return;
-                  }
-                  try {
-                    // Update Firebase instead of local state
-                    await firebaseService.updateEmployee(resigningEmpId, {
-                      resignDate: resignDateInput,
-                      resignConfirmed: false
-                    }, "store_user");
-                    setIsResignModalOpen(false);
-                    setToast({ type: "success", msg: "퇴사 처리가 완료되었습니다." });
-                    setTimeout(() => setToast(null), 3000);
-                  } catch (error) {
-                    console.error("퇴사 처리 오류:", error);
-                    alert("퇴사 처리 중 오류가 발생했습니다.");
-                  }
-                }}
-                className="px-6 py-2.5 rounded-xl font-black bg-rose-600 hover:bg-rose-700 text-white transition-all shadow-md cursor-pointer"
-              >
-                퇴사 처리 확정
-              </button>
+                <div className="max-w-xs mx-auto space-y-4 pt-2">
+                  {/* 1. 퇴사처리 문구 입력 */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1 text-left">1. 확인 문구 입력 ('퇴사처리')</label>
+                    <input
+                      type="text"
+                      value={resignTextInput}
+                      onChange={(e) => setResignTextInput(e.target.value)}
+                      placeholder="퇴사처리"
+                      autoFocus
+                      className="w-full text-center text-lg font-black tracking-wider border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-3 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
+                    />
+                  </div>
+
+                  {/* 2. 퇴사일 선택 */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1 text-left">2. 퇴사일 선택</label>
+                    <input
+                      type="date"
+                      value={resignDateInput}
+                      onChange={(e) => setResignDateInput(e.target.value)}
+                      className="w-full text-center text-base font-bold border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-2.5 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all text-slate-900 bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 푸터 */}
+              <div className="px-7 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setIsResignModalOpen(false)}
+                  className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-colors cursor-pointer text-sm"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={async () => {
+                    if (resignTextInput.trim() !== "퇴사처리" || !resignDateInput || !resigningEmpId) return;
+                    try {
+                      const updatedData = {
+                        resignDate: resignDateInput,
+                        status: '퇴사',
+                        resignConfirmed: false
+                      };
+                      await firebaseService.updateEmployee(resigningEmpId, updatedData, "store_user");
+                      setEmployees(prev => prev.map(e => e.id === resigningEmpId ? { ...e, ...updatedData } : e));
+                      setIsResignModalOpen(false);
+                      setResigningEmpId(null);
+                      setResignTextInput("");
+                      if (typeof setEmpListGroupTab === 'function') setEmpListGroupTab("퇴사자");
+                      flash(`"${targetEmp?.name || '해당'}" 직원의 퇴사 처리가 완료되어 [퇴사자] 탭으로 이동했습니다.`);
+                    } catch (error) {
+                      console.error("퇴사 처리 오류:", error);
+                      alert("퇴사 처리 중 오류가 발생했습니다.");
+                    }
+                  }}
+                  disabled={resignTextInput.trim() !== "퇴사처리" || !resignDateInput}
+                  className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
+                >
+                  <UserX className="w-4 h-4" />
+                  퇴사 실행
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 🔒 비밀번호 2차 검증 모달 (삭제 작업 시 트리거) */}
       <PasswordConfirmModal
@@ -6818,7 +6863,7 @@ export default function PayrollFlowPrototype() {
         }
       })()}
 
-      {/* 🚨 퇴사 처리 확인 커스텀 모달 (localhost 얼럿 대용) */}
+      {/* 🚨 퇴사 처리 확인 커스텀 모달 (회계팀 프로필 모달 전용) */}
       {isProfileResignModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-rose-100 flex flex-col space-y-0">
@@ -6845,19 +6890,34 @@ export default function PayrollFlowPrototype() {
                   <span className="text-rose-600 font-black px-1">{profileEditForm?.name}</span> 직원을 퇴사 처리하시겠습니까?
                 </div>
                 <p className="text-base font-bold text-slate-500">
-                  실수로 인한 퇴사 처리를 방지하기 위해 아래 입력창에 <strong className="text-rose-600 font-black">'퇴사처리'</strong>라고 적어주세요.
+                  실수로 인한 퇴사 처리를 방지하기 위해 아래 입력창에 <strong className="text-rose-600 font-black">'퇴사처리'</strong>를 적고 퇴사일을 선택해 주세요.
                 </p>
               </div>
 
-              <div className="max-w-xs mx-auto pt-2">
-                <input
-                  type="text"
-                  value={profileResignInputText}
-                  onChange={(e) => setProfileResignInputText(e.target.value)}
-                  placeholder="퇴사처리"
-                  autoFocus
-                  className="w-full text-center text-xl font-black tracking-wider border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-3.5 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
-                />
+              <div className="max-w-xs mx-auto space-y-4 pt-2">
+                {/* 1. 퇴사처리 문구 입력 */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1 text-left">1. 확인 문구 입력 ('퇴사처리')</label>
+                  <input
+                    type="text"
+                    value={profileResignInputText}
+                    onChange={(e) => setProfileResignInputText(e.target.value)}
+                    placeholder="퇴사처리"
+                    autoFocus
+                    className="w-full text-center text-lg font-black tracking-wider border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-3 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
+                  />
+                </div>
+
+                {/* 2. 퇴사일 선택 */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-1 text-left">2. 퇴사일 선택</label>
+                  <input
+                    type="date"
+                    value={profileResignDateInput}
+                    onChange={(e) => setProfileResignDateInput(e.target.value)}
+                    className="w-full text-center text-base font-bold border-2 border-slate-300 focus:border-rose-500 rounded-2xl py-2.5 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-100 transition-all text-slate-900 bg-white"
+                  />
+                </div>
               </div>
             </div>
 
@@ -6871,11 +6931,11 @@ export default function PayrollFlowPrototype() {
               </button>
               <button
                 onClick={confirmProfileResignation}
-                disabled={profileResignInputText.trim() !== "퇴사처리"}
+                disabled={profileResignInputText.trim() !== "퇴사처리" || !profileResignDateInput}
                 className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
               >
                 <UserX className="w-4 h-4" />
-                퇴사 처리 확정
+                퇴사 실행
               </button>
             </div>
           </div>
