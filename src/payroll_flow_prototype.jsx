@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx-js-style";
 import {
   Store, Landmark, Briefcase, Building2, UserPlus, Lock, Unlock,
-  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight, LogOut, FilePlus, UserX
+  CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight, LogOut, FilePlus, UserX, Printer
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
 
@@ -619,6 +619,15 @@ export default function PayrollFlowPrototype() {
 
   const [role, setRole] = useState("accounting");
   const [accountingSubtab, setAccountingSubtab] = useState("confirm");
+  const [salaryGroupTab, setSalaryGroupTab] = useState("정직원");
+  const [salaryViewMode, setSalaryViewMode] = useState("all");
+  const [salaryBaseDate, setSalaryBaseDate] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [payrollData, setPayrollData] = useState([]);
+  const [salaryRules, setSalaryRules] = useState([]);
+  const [showRuleEditor, setShowRuleEditor] = useState(false);
   const [hrSubtab, setHrSubtab] = useState("confirm");
 
   // 직원 관리 탭 관련 State
@@ -728,6 +737,17 @@ export default function PayrollFlowPrototype() {
   useEffect(() => {
     setConfigForm(laborConfig);
   }, [laborConfig]);
+
+  // 급여 데이터 & 규칙 구독
+  useEffect(() => {
+    if (role !== "accounting" || accountingSubtab !== "salary") return;
+    const unsubPayrolls = firebaseService.subscribePayrolls(currentStoreCode, salaryBaseDate, setPayrollData);
+    const unsubRules = firebaseService.subscribeSalaryRules(currentStoreCode, setSalaryRules);
+    return () => {
+      if(unsubPayrolls) unsubPayrolls();
+      if(unsubRules) unsubRules();
+    };
+  }, [role, accountingSubtab, currentStoreCode, salaryBaseDate]);
 
   // 뱃지 상세 팝업 상태
   const [badgeModalData, setBadgeModalData] = useState({
@@ -2496,6 +2516,101 @@ export default function PayrollFlowPrototype() {
     );
   };
 
+  // --- 급여 테이블 관련 로직 ---
+  const getPayrollCell = (empId, fieldName) => {
+    const docId = `${currentStoreCode}_${salaryBaseDate}_${empId}`;
+    const pData = payrollData.find(p => p.id === docId);
+    return pData?.data?.[fieldName] || "";
+  };
+
+  const getPayrollOverride = (empId, fieldName) => {
+    const docId = `${currentStoreCode}_${salaryBaseDate}_${empId}`;
+    const pData = payrollData.find(p => p.id === docId);
+    return pData?.data?._overrides?.[fieldName] || false;
+  };
+
+  const calculateCell = (empId, fieldName) => {
+    // 수동 오버라이드가 있으면 해당 값을 반환
+    if (getPayrollOverride(empId, fieldName)) {
+      return getPayrollCell(empId, fieldName);
+    }
+    
+    // 규칙이 있는지 확인
+    const rule = salaryRules.find(r => r.target === fieldName);
+    if (!rule) {
+      return getPayrollCell(empId, fieldName); // 룰이 없으면 저장된 값 반환
+    }
+
+    // 규칙 기반 계산 (간단한 수식 엔진)
+    let total = 0;
+    rule.formula.forEach((f, idx) => {
+      let val = 0;
+      if (f.type === "number") {
+        val = Number(f.ref) || 0;
+      } else {
+        // 재귀적 호출을 통해 다른 규칙 결과값도 가져옴
+        val = Number(calculateCell(empId, f.ref)) || 0;
+      }
+
+      if (idx === 0) {
+        total = val;
+      } else {
+        if (f.op === "+") total += val;
+        else if (f.op === "-") total -= val;
+        else if (f.op === "*") total *= val;
+        else if (f.op === "/") total = val !== 0 ? total / val : 0;
+      }
+    });
+
+    return Math.round(total);
+  };
+
+  const handleCellChange = (empId, fieldName, value, isOverride = true) => {
+    if (typeof firebaseService.updatePayrollCell === 'function') {
+      firebaseService.updatePayrollCell(currentStoreCode, salaryBaseDate, empId, fieldName, value, isOverride);
+    }
+  };
+
+  const renderEditableCell =  (empId, fieldName, isCalculated = false) => {
+    const isOverride = getPayrollOverride(empId, fieldName);
+    const value = calculateCell(empId, fieldName);
+    
+    // 3자리마다 콤마 포맷팅 (단위가 시간이면 소수점 허용)
+    const formattedValue = fieldName.includes("Hours") || fieldName === "workDays" 
+      ? value 
+      : (value ? Number(value).toLocaleString() : "");
+
+    return (
+      <td className={`border-r border-[#D6E0EC] relative p-0 h-[40px] bg-white hover:bg-slate-50/50`}>
+        <input
+          type="text"
+          defaultValue={formattedValue}
+          onBlur={(e) => {
+            const rawValue = e.target.value.replace(/,/g, '');
+            if (rawValue !== String(value)) {
+              handleCellChange(empId, fieldName, rawValue, isCalculated ? true : false);
+            }
+          }}
+          className={`w-full h-full px-2 py-1 text-center outline-none bg-transparent focus:bg-white focus:ring-2 focus:ring-[#3D5A80] focus:z-10 absolute inset-0 ${isCalculated && !isOverride ? "text-slate-500 font-medium" : "text-slate-900 font-semibold"} ${isOverride ? "text-[#EF7D25]" : ""}`}
+        />
+      </td>
+    );
+  };
+
+  // 엑셀 다운로드 (급여)
+  const downloadSalaryExcel = () => {
+    const table = document.getElementById("salary-table");
+    if (!table) return;
+    const clonedTable = table.cloneNode(true);
+    const inputs = clonedTable.querySelectorAll('input');
+    inputs.forEach(input => {
+      const textNode = document.createTextNode(input.value);
+      input.parentNode.replaceChild(textNode, input);
+    });
+    const wb = XLSX.utils.table_to_book(clonedTable, { sheet: "급여대장" });
+    XLSX.writeFile(wb, `${currentStoreObj?.name || '매장'}_${salaryBaseDate}_${salaryGroupTab}_급여대장.xlsx`);
+  };
+
   return (
     <div className="w-full min-h-screen bg-[#F1F5F9] text-slate-800 antialiased pb-16" style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif" }}>
       {/* 0. 로그인 계정 / 매장 로그인 아이디 분석 시뮬레이션 바 */}
@@ -2669,12 +2784,12 @@ export default function PayrollFlowPrototype() {
       </nav>
 
       {/* 3. 메인 콘텐츠 영역 */}
-      <main className={`${(role === "store" && storeTab === "schedule") || (role === "accounting" && accountingSubtab === "schedule") ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
+      <main className={`${(role === "store" && storeTab === "schedule") || (role === "accounting" && (accountingSubtab === "schedule" || accountingSubtab === "salary")) ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
         {role === "accounting" && (
-            <div className="flex gap-3 mb-6">
+            <div className="flex flex-wrap gap-3 mb-6 overflow-x-auto scrollbar-hide pb-2">
               <button
                 onClick={() => setAccountingSubtab("confirm")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "confirm"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2693,7 +2808,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("attendance")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "attendance"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2705,7 +2820,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("schedule")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "schedule"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2716,8 +2831,20 @@ export default function PayrollFlowPrototype() {
               </button>
 
               <button
+                onClick={() => setAccountingSubtab("salary")}
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  accountingSubtab === "salary"
+                    ? "bg-[#EF7D25] text-white shadow-md"
+                    : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <DollarSign className="w-4 h-4" />
+                <span>급여 관리</span>
+              </button>
+
+              <button
                 onClick={() => setAccountingSubtab("employees")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "employees"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2729,7 +2856,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("holidays")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "holidays"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2741,7 +2868,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("labor")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "labor"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2760,7 +2887,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("stores")}
-                className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                   accountingSubtab === "stores"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2809,7 +2936,7 @@ export default function PayrollFlowPrototype() {
             </div>
 
             {/* 서브탭 버튼 */}
-            <div className="flex gap-3 mb-6">
+            <div className="flex flex-wrap gap-3 mb-6 overflow-x-auto scrollbar-hide pb-2">
               <button
                 onClick={() => setStoreTab("attendance")}
                 className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer ${
@@ -5126,10 +5253,10 @@ export default function PayrollFlowPrototype() {
           <div className="space-y-8 animate-in fade-in duration-200">
             {/* 인사팀 상단 탭 버튼 */}
             {hrSubtab !== "dashboard" && (
-              <div className="flex gap-3 mb-6">
+              <div className="flex flex-wrap gap-3 mb-6 overflow-x-auto scrollbar-hide pb-2">
                 <button
                   onClick={() => setHrSubtab("confirm")}
-                  className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                     hrSubtab === "confirm" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -5138,7 +5265,7 @@ export default function PayrollFlowPrototype() {
                 </button>
                 <button
                   onClick={() => setHrSubtab("employees")}
-                  className={`px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                  className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
                     hrSubtab === "employees" ? "bg-[#EF7D25] text-white shadow-md" : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -5753,6 +5880,198 @@ export default function PayrollFlowPrototype() {
             </div>
           </div>
         )}
+            {/* ---------------- 급여 관리 탭 ---------------- */}
+            {accountingSubtab === "salary" && (
+              <div className="animate-in fade-in duration-200">
+                <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
+                  <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                    <Store className="w-5 h-5 text-[#EF7D25]" />
+                    매장 선택
+                  </h2>
+                  <select
+                    value={currentStoreCode}
+                    onChange={(e) => setCurrentStoreCode(e.target.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
+                  >
+                    {storeList.map(s => (
+                      <option key={s.code} value={s.code}>{s.name}</option>
+                    ))}
+                  </select>
+                  <span className="text-sm text-slate-500 font-semibold ml-2">
+                    선택한 매장의 급여 데이터를 열람/수정합니다.
+                  </span>
+                </div>
+
+                <div className="flex justify-between items-center mb-6 w-full print:hidden">
+                  <div className="flex gap-6 border-b border-[#D6E0EC] w-max">
+                    {["정직원", "아르바이트", "일용직"].map((type) => (
+                      <button key={type} onClick={() => setSalaryGroupTab(type)}
+                        className={`pb-2 px-1 text-[15px] font-semibold transition-all border-b-[2px] ${
+                          salaryGroupTab === type ? "border-[#3D5A80] text-[#33455E]" : "border-transparent text-[#94A3B8] hover:text-[#33455E]"
+                        }`}>{type}</button>
+                    ))}
+                  </div>
+                  
+                  <div className="flex gap-4 items-center">
+                    {/* A파트 / B파트 탭 (우측 이동) */}
+                    <div className="flex border border-[#D6E0EC] rounded-lg overflow-hidden">
+                      {[
+                        { id: "all", label: "전체 보기" },
+                        { id: "partA", label: "A파트 (지급)" },
+                        { id: "partB", label: "B파트 (공제)" }
+                      ].map((mode) => (
+                        <button key={mode.id} onClick={() => setSalaryViewMode(mode.id)}
+                          className={`px-4 py-1.5 text-sm font-medium transition-all ${
+                            salaryViewMode === mode.id ? "bg-[#3D5A80] text-white" : "bg-white text-[#33455E] hover:bg-slate-50"
+                          }`}>{mode.label}</button>
+                      ))}
+                    </div>
+
+                    {/* 인쇄 및 엑셀 다운로드 버튼 */}
+                    <div className="flex gap-2">
+                      <button onClick={() => window.print()} className="px-4 py-1.5 bg-white border border-[#D6E0EC] text-[#33455E] rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors flex items-center gap-2">
+                        <Printer className="w-4 h-4" />
+                        인쇄
+                      </button>
+                      <button onClick={downloadSalaryExcel} className="px-4 py-1.5 bg-[#3D5A80] text-white rounded-lg hover:bg-[#2b415e] font-medium text-sm transition-colors flex items-center gap-2 border border-[#3D5A80]">
+                        <Download className="w-4 h-4" />
+                        엑셀 다운로드
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* 인쇄 헤더 (인쇄 시에만 보임) */}
+                <div className="hidden print:block mb-4 pb-2 border-b-2 border-slate-800">
+                  <p className="text-xl font-black text-slate-900">{currentStoreObj?.name} — {salaryGroupTab} 급여대장 ({salaryBaseDate})</p>
+                </div>
+
+                
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto w-full pb-10">
+                    <table className="w-max border-collapse text-sm text-center min-w-max">
+                      <thead>
+                        {/* Header Row 1 */}
+                        <tr className="bg-[#FFF2EB] text-[#7A3416] border-b-2 border-[#FD7B37] font-semibold text-[13px]">
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>NO</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>부서</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>직책</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>성명</th>
+                          
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>근무일수</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>월정급여</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>시급</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>기본급<br/>209.00</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>식대</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>고정연장수당<br/>65.18</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>고정연차수당<br/>8.00</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>소계<br/>282.18</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>상여금</th>
+                          
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={2}>휴일근로</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={2}>추가휴일연장근로</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold text-[#5c8ed1] bg-[#e4eef6]" colSpan={2}>지각/조퇴/결근/기타</th>
+                          
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>급여총계</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" colSpan={9}>공제내역</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold bg-[#FFE4D1] text-[#7A3416]" rowSpan={2}>실지급액</th>
+                          
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>특이사항</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>퇴직연금</th>
+                          <th className="px-3 py-2 border-r border-[#F3E9E2] font-semibold" rowSpan={2}>평균임금</th>
+                          <th className="px-3 py-2 border-slate-300 font-semibold" rowSpan={2}>연봉</th>
+                        </tr>
+                        
+                        {/* Header Row 2 */}
+                        <tr className="bg-[#FFF8F3] text-[#7A3416] border-b border-[#F3E9E2] text-[12px] font-medium">
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">시간</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">수당</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">시간</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">수당</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2] bg-[#e4eef6] text-[#5c8ed1]">시간</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2] bg-[#e4eef6] text-[#5c8ed1]">수당</th>
+                          
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">국민연금</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">건강보험</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">장기요양</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">고용보험</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">연말(지방세)</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">가지급금</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">소득세</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">지방소득세</th>
+                          <th className="px-2 py-1 border-r border-[#F3E9E2]">공제계</th>
+                        </tr>
+                      </thead>
+                                            <tbody>
+                        {employees
+                          .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
+                          .map((emp, index) => (
+                            <tr key={emp.id} className="border-b border-[#F3E9E2] hover:bg-[#FFF2EB]/60 transition-colors even:bg-[#FFFAF7] bg-white text-[13px]">
+                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px' }}>{index + 1}</td>
+                              {(salaryViewMode === "all" || salaryViewMode === "partA") && <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '100px' }}>{emp.department || ""}</td>}
+                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit" style={{ left: (salaryViewMode === 'partB' ? 40 : 140) + 'px', minWidth: '80px' }}>{emp.position || ""}</td>
+                              <td className="px-3 py-2 border-b border-[#F3E9E2] text-left sticky z-10 bg-inherit border-r-2 border-r-[#FD7B37]" style={{ left: (salaryViewMode === 'partB' ? 120 : 220) + 'px', minWidth: '100px' }}>
+                                <span 
+                                  onClick={() => setSelectedEmpProfile(emp)}
+                                  className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#7A3416]"}`}
+                                >
+                                  {emp.name}
+                                </span>
+                              </td>
+                              
+                              
+                              
+                              {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                <>
+                                  {renderEditableCell(emp.id, 'workDays')}
+                                  {renderEditableCell(emp.id, 'monthlySalary')}
+                                  {renderEditableCell(emp.id, 'hourlyWage')}
+                                  {renderEditableCell(emp.id, 'basePay')}
+                                  {renderEditableCell(emp.id, 'mealAllowance')}
+                                  {renderEditableCell(emp.id, 'fixedOT')}
+                                  {renderEditableCell(emp.id, 'fixedAnnual')}
+                                  {renderEditableCell(emp.id, 'subtotal', true)}
+                                  {renderEditableCell(emp.id, 'bonus')}
+                                  
+                                  {renderEditableCell(emp.id, 'holidayHours')}
+                                  {renderEditableCell(emp.id, 'holidayPay')}
+                                  {renderEditableCell(emp.id, 'holidayOTHours')}
+                                  {renderEditableCell(emp.id, 'holidayOTPay')}
+                                  {renderEditableCell(emp.id, 'lateHours')}
+                                  {renderEditableCell(emp.id, 'latePay')}
+                                </>
+                              )}
+                              
+                              {renderEditableCell(emp.id, 'totalPay', true)}
+                              
+                              {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                <>
+                                  {renderEditableCell(emp.id, 'nationalPension')}
+                                  {renderEditableCell(emp.id, 'healthIns')}
+                                  {renderEditableCell(emp.id, 'longTermCare')}
+                                  {renderEditableCell(emp.id, 'employmentIns')}
+                                  {renderEditableCell(emp.id, 'yearEnd')}
+                                  {renderEditableCell(emp.id, 'advance')}
+                                  {renderEditableCell(emp.id, 'incomeTax')}
+                                  {renderEditableCell(emp.id, 'localTax')}
+                                  {renderEditableCell(emp.id, 'deductionTotal', true)}
+                                  
+                                  {renderEditableCell(emp.id, 'netPay', true)}
+                                  
+                                  {renderEditableCell(emp.id, 'notes')}
+                                  {renderEditableCell(emp.id, 'retirePension')}
+                                  {renderEditableCell(emp.id, 'avgWage')}
+                                  {renderEditableCell(emp.id, 'annualSalary')}
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                
+                
+              </div>
+            )}
       </main>
 
       {/* 👤 사원 등록 및 수정 모달 */}
@@ -5762,7 +6081,7 @@ export default function PayrollFlowPrototype() {
             <button onClick={() => { setIsEmpModalOpen(false); cancelEdit(); }} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer">
               <X className="w-6 h-6" />
             </button>
-            <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-6 pb-4 border-b border-slate-100">
+            <div className="flex items-center gap-2 text-xl font-semibold text-slate-900 mb-6 pb-4 border-b border-slate-100">
               {editingEmpId ? <Edit3 className="w-6 h-6 text-[#EF7D25]" /> : <UserPlus className="w-6 h-6 text-[#EF7D25]" />}
               <h2>{editingEmpId ? `✏️ "${form.name}" 사원 서류 보완 및 수정` : "신규 사원 등록"}</h2>
             </div>
@@ -5781,7 +6100,7 @@ export default function PayrollFlowPrototype() {
               <Field label="계좌번호" value={form.account} onChange={(v) => setForm({ ...form, account: v })} placeholder="은행명 및 계좌번호" />
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">소속 매장 <span className="text-xs text-slate-400 font-normal">(자동 매칭 · 수정 불가)</span></label>
-                <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
+                <div className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-semibold text-slate-700 bg-slate-100 cursor-not-allowed shadow-xs flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-slate-900"><Store className="w-4 h-4 text-[#EF7D25]" /> {currentStoreCode}</span>
                   <span className="text-xs font-extrabold px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md">고정됨</span>
                 </div>
@@ -5798,14 +6117,14 @@ export default function PayrollFlowPrototype() {
             <div className="mt-6">
               <div className="text-sm font-semibold text-slate-700 mb-2 flex flex-wrap items-center justify-between gap-2">
                 <span>첨부서류 (클릭 후 사진 첨부)</span>
-                <span className="text-rose-500 font-bold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">※ 등록 후 30일 경과 시 자동 파기</span>
+                <span className="text-rose-500 font-semibold text-xs bg-rose-50 px-2 py-0.5 rounded border border-rose-200">※ 등록 후 30일 경과 시 자동 파기</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {DOCS.map((d) => {
                   const fileData = form[d.key];
                   const isAttached = Boolean(fileData);
                   return (
-                    <label key={d.key} className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${isAttached ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-bold shadow-xs" : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"}`}>
+                    <label key={d.key} className={`flex items-center justify-center gap-1.5 text-sm font-semibold px-3 py-3 rounded-xl border transition-all cursor-pointer select-none text-center ${isAttached ? "bg-emerald-50 border-2 border-emerald-500 text-emerald-800 font-semibold shadow-xs" : "bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100"}`}>
                       <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
@@ -5831,7 +6150,7 @@ export default function PayrollFlowPrototype() {
             )}
 
             <div className="mt-8 pt-6 border-t border-slate-100 flex justify-end gap-3">
-              <button onClick={() => { setIsEmpModalOpen(false); cancelEdit(); }} className="px-6 py-3 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
+              <button onClick={() => { setIsEmpModalOpen(false); cancelEdit(); }} className="px-6 py-3 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
                 취소
               </button>
               <button
@@ -5855,7 +6174,7 @@ export default function PayrollFlowPrototype() {
             <button onClick={() => setIsResignModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer">
               <X className="w-6 h-6" />
             </button>
-            <div className="flex items-center gap-2 text-xl font-bold text-slate-900 mb-6">
+            <div className="flex items-center gap-2 text-xl font-semibold text-slate-900 mb-6">
               <LogOut className="w-6 h-6 text-rose-600" />
               <h2>직원 퇴사 처리</h2>
             </div>
@@ -5865,17 +6184,17 @@ export default function PayrollFlowPrototype() {
             </p>
 
             <div className="mb-8">
-              <label className="block text-sm font-bold text-slate-700 mb-2">퇴사일 *</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">퇴사일 *</label>
               <input 
                 type="date" 
                 value={resignDateInput}
                 onChange={(e) => setResignDateInput(e.target.value)}
-                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-base font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
 
             <div className="flex justify-end gap-3">
-              <button onClick={() => setIsResignModalOpen(false)} className="px-5 py-2.5 rounded-xl font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
+              <button onClick={() => setIsResignModalOpen(false)} className="px-5 py-2.5 rounded-xl font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer">
                 취소
               </button>
               <button
@@ -5925,120 +6244,325 @@ export default function PayrollFlowPrototype() {
         onAction={handleBadgeAction}
       />
 
-      {/* 👥 직원 상세 프로필 모달 (열람 전용) */}
-      {selectedEmpProfile && (() => {
+      {/* 👥 직원 상세 프로필 모달 */}
+      {selectedEmpProfile && profileEditForm && (() => {
+        try {
         // 마지막 출근일 계산 로직
-        const empAtts = attendance.filter(a => a.empId === selectedEmpProfile.id);
+        const empAtts = attendance.filter(a => a.employeeId === selectedEmpProfile.id);
         let lastAttDate = "-";
+        let isNoRecord = false;
         if (empAtts.length > 0) {
           const sorted = [...empAtts].sort((a,b) => new Date(b.date) - new Date(a.date));
           lastAttDate = sorted[0].date;
         } else if (selectedEmpProfile.hireDate) {
           lastAttDate = `${selectedEmpProfile.hireDate} (출근기록 없음)`;
+          isNoRecord = true;
         }
+
+        const empLeave = leaveBalances[selectedEmpProfile.id] || { total: 15, used: 0 };
+        const remainLeave = empLeave.total - empLeave.used;
+
+        // Helper for payroll values
+        const safeGetPayroll = (empId, field) => {
+          if (typeof payrollData !== 'undefined' && payrollData) {
+            const docId = `${currentStoreCode}_${salaryBaseDate}_${empId}`;
+            const pData = payrollData.find(p => p.id === docId);
+            return pData?.data?.[field] || "";
+          }
+          return "";
+        };
+        const nationalPensionRaw = safeGetPayroll(selectedEmpProfile.id, 'nationalPension') || "";
+        
+        const renderFormattedInput = (field, placeholder) => {
+          const firebaseVal = safeGetPayroll(selectedEmpProfile.id, field) || "";
+          const rawValue = profileEditForm[`_payroll_${field}`] !== undefined ? profileEditForm[`_payroll_${field}`] : firebaseVal;
+          const displayValue = !isNaN(Number(rawValue)) && rawValue !== "" ? Number(rawValue).toLocaleString() : rawValue;
+          
+          return (
+            <input 
+              type="text" 
+              value={displayValue}
+              onChange={(e) => {
+                const cleaned = e.target.value.replace(/,/g, '');
+                if (/^\d*$/.test(cleaned) || cleaned === '') {
+                  handleProfileFormChange(`_payroll_${field}`, cleaned);
+                }
+              }}
+              placeholder={placeholder}
+              disabled={!profileEditMode}
+              className={`w-full rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none transition-colors ${profileEditMode ? 'bg-white border border-[#FD7B37] focus:ring-2 focus:ring-[#FD7B37]' : 'bg-transparent border-transparent cursor-default px-0'}`} 
+            />
+          );
+        };
+
+        const renderBasicInput = (field, placeholder) => {
+          return (
+            <input
+              type="text"
+              value={profileEditForm[field] || ''}
+              onChange={(e) => handleProfileFormChange(field, e.target.value)}
+              placeholder={placeholder}
+              disabled={!profileEditMode}
+              className={`w-full rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none transition-colors ${profileEditMode ? 'bg-white border border-[#FD7B37] focus:ring-2 focus:ring-[#FD7B37]' : 'bg-transparent border-transparent cursor-default px-0'}`}
+            />
+          );
+        };
 
         return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               {/* Header */}
-              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="px-6 py-5 flex items-center justify-between bg-[#FFF2EB]">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#EF7D25]/10 flex items-center justify-center">
-                    <UserCheck className="w-5 h-5 text-[#EF7D25]" />
+                  <div className="w-12 h-12 rounded-full bg-[#FFE4D1] flex items-center justify-center">
+                    <UserCheck className="w-6 h-6 text-[#FD7B37]" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900">{selectedEmpProfile.name}</h3>
-                    <p className="text-sm font-semibold text-slate-500">{selectedEmpProfile.storeCode} · {selectedEmpProfile.employmentType}</p>
+                    <h3 className="text-[16px] font-semibold text-[#1E293B]">{profileEditForm.name}</h3>
+                    <p className="text-[12px] font-medium text-[#64748B] mt-0.5">{profileEditForm.storeCode} · {profileEditForm.employmentType}</p>
                   </div>
                 </div>
-                <button onClick={() => setSelectedEmpProfile(null)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
+                <div className="flex items-center gap-2">
+                  <button onClick={handleResign} className="px-3 py-1.5 bg-red-50 text-red-600 font-semibold text-[13px] rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1 cursor-pointer">
+                    <UserX className="w-4 h-4" /> 퇴사처리
+                  </button>
+                  <button onClick={() => setSelectedEmpProfile(null)} className="p-2 text-slate-400 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"><X className="w-5 h-5" /></button>
+                </div>
               </div>
               
               {/* Body */}
               <div className="p-6 overflow-y-auto space-y-6">
-                {/* 기본 정보 */}
+                
+                {/* 1. 기본 신상정보 */}
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><UserCheck className="w-4 h-4"/> 기본 신상정보</h4>
-                  <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-2 gap-4 border border-slate-100">
+                  <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                    <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><UserCheck className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                    기본 신상정보
+                  </h4>
+                  <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-2 gap-4 border border-[#F3E9E2]">
                     <div>
-                      <div className="text-xs text-slate-500 font-medium mb-1">주민등록번호</div>
-                      <div className="font-bold text-slate-900">{selectedEmpProfile.ssn || "-"}</div>
+                      <div className="text-[12px] text-[#64748B] mb-1">주민등록번호</div>
+                      {profileEditMode ? renderBasicInput('ssn', '예: 900101-1234567') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.ssn || "-"}</div>}
                     </div>
                     <div>
-                      <div className="text-xs text-slate-500 font-medium mb-1">연락처 (휴대폰)</div>
-                      <div className="font-bold text-slate-900">{selectedEmpProfile.phone || "-"}</div>
+                      <div className="text-[12px] text-[#64748B] mb-1">연락처 (휴대폰)</div>
+                      {profileEditMode ? renderBasicInput('phone', '예: 010-1234-5678') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.phone || "-"}</div>}
                     </div>
                   </div>
                 </div>
 
-                {/* 계약 및 소속 정보 */}
+                {/* 2. 계약 및 소속 정보 */}
                 <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Briefcase className="w-4 h-4"/> 계약 및 소속 정보</h4>
-                  <div className="bg-slate-50 rounded-2xl p-4 grid grid-cols-2 gap-4 border border-slate-100">
+                  <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                    <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><Briefcase className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                    계약 및 소속 정보
+                  </h4>
+                  <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-2 gap-4 border border-[#F3E9E2]">
                     <div>
-                      <div className="text-xs text-slate-500 font-medium mb-1">고용형태</div>
-                      <div className="font-bold text-slate-900">{selectedEmpProfile.employmentType || "-"}</div>
+                      <div className="text-[12px] text-[#64748B] mb-1">고용형태</div>
+                      {profileEditMode ? (
+                        <select 
+                          value={profileEditForm.employmentType || ''} 
+                          onChange={(e) => handleProfileFormChange('employmentType', e.target.value)}
+                          className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37]"
+                        >
+                          <option value="정직원">정직원</option>
+                          <option value="계약직">계약직</option>
+                          <option value="아르바이트">아르바이트</option>
+                          <option value="일용직">일용직</option>
+                        </select>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.employmentType || "-"}</div>
+                      )}
                     </div>
-                    {selectedEmpProfile.employmentType === "정직원" && (
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">직책/부서</div>
+                      {profileEditMode ? renderBasicInput('position', '직책/부서 입력') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.position || profileEditForm.department || "기본 (담당/매니저)"}</div>}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">입사일</div>
+                      {profileEditMode ? renderBasicInput('hireDate', 'YYYY-MM-DD') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.hireDate || "-"}</div>}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">마지막 출근일</div>
+                      {isNoRecord ? (
+                        <div className="text-[14px] font-semibold text-[#C2760C] flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4"/> {lastAttDate}
+                        </div>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{lastAttDate}</div>
+                      )}
+                    </div>
+                    {profileEditForm.resignDate && (
                       <div>
-                        <div className="text-xs text-slate-500 font-medium mb-1">직책/부서</div>
-                        <div className="font-bold text-slate-900">{selectedEmpProfile.position || selectedEmpProfile.department || "기본 (담당/매니저)"}</div>
+                        <div className="text-[12px] text-[#64748B] mb-1">퇴사일</div>
+                        {profileEditMode ? renderBasicInput('resignDate', 'YYYY-MM-DD') : (
+                          <div className="text-[14px] font-semibold text-[#C2760C] flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4"/> {profileEditForm.resignDate}
+                          </div>
+                        )}
                       </div>
                     )}
-                    <div>
-                      <div className="text-xs text-slate-500 font-medium mb-1">입사일</div>
-                      <div className="font-bold text-slate-900">{selectedEmpProfile.hireDate || "-"}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-blue-500 font-medium mb-1">마지막 출근일</div>
-                      <div className="font-bold text-blue-700">{lastAttDate}</div>
-                    </div>
-                    {selectedEmpProfile.resignDate && (
+                  </div>
+                </div>
+
+                {/* 3. 연차 정보 */}
+                {(profileEditForm.employmentType === '정직원' || profileEditForm.employmentType === '계약직') && (
+                  <div>
+                    <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                      <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><Calendar className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                      연차 정보 (휴무 관리 연동)
+                    </h4>
+                    <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-3 gap-4 border border-[#F3E9E2]">
                       <div>
-                        <div className="text-xs text-red-500 font-medium mb-1">퇴사일</div>
-                        <div className="font-bold text-red-600">{selectedEmpProfile.resignDate}</div>
+                        <div className="text-[12px] text-[#64748B] mb-1">총 부여 연차</div>
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{empLeave.total}일</div>
                       </div>
-                    )}
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">사용 연차</div>
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{empLeave.used}일</div>
+                      </div>
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">잔여 연차</div>
+                        <div className="text-[14px] font-semibold text-[#1E293B]">{remainLeave}일</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
-              {/* 계좌 정보 */}
-              {role !== "hr" ? (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Landmark className="w-4 h-4"/> 급여 계좌 정보</h4>
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                    <div className="text-xs text-slate-500 font-medium mb-1">계좌번호</div>
-                    <div className="font-bold text-slate-900">{selectedEmpProfile.account || "등록된 계좌 없음"}</div>
+                {/* 4. 급여 및 세금/공제 정보 (급여관리 연동) */}
+                {role === "accounting" && (
+                  <div>
+                    <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                      <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><Calculator className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                      급여/공제 정보 (급여관리 연동)
+                    </h4>
+                    <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-2 gap-4 border border-[#F3E9E2]">
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">월정급여</div>
+                        {renderFormattedInput('monthlySalary', '금액 입력')}
+                      </div>
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">국민연금</div>
+                        {profileEditMode ? (
+                          <select 
+                            value={nationalPensionRaw === '60세 이상 미가입' ? '60세 이상 미가입' : (nationalPensionRaw ? '금액입력' : '')}
+                            onChange={(e) => {
+                              if(e.target.value === '60세 이상 미가입') {
+                                handleCellChange(selectedEmpProfile.id, 'nationalPension', '60세 이상 미가입', true);
+                              } else {
+                                handleCellChange(selectedEmpProfile.id, 'nationalPension', '', true);
+                              }
+                            }}
+                            className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37] mb-2"
+                          >
+                            <option value="">(자동 계산)</option>
+                            <option value="금액입력">금액 직접입력</option>
+                            <option value="60세 이상 미가입">60세 이상 미가입</option>
+                          </select>
+                        ) : (
+                          <div className="text-[14px] font-semibold text-[#1E293B]">{nationalPensionRaw === '60세 이상 미가입' ? '60세 이상 미가입' : (nationalPensionRaw || "자동계산")}</div>
+                        )}
+                        {(profileEditMode && nationalPensionRaw !== '60세 이상 미가입') && (
+                          renderFormattedInput('nationalPension', '금액 입력')
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">소득세</div>
+                        {renderFormattedInput('incomeTax', '금액 입력')}
+                      </div>
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">지방소득세</div>
+                        {renderFormattedInput('localTax', '금액 입력')}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center gap-2"><Lock className="w-4 h-4"/> 급여 계좌 정보</h4>
-                  <div className="bg-slate-100 rounded-2xl p-4 border border-slate-200">
-                    <div className="text-xs text-slate-500 font-medium mb-1">계좌번호</div>
-                    <div className="font-bold text-slate-400 italic">🔒 인사팀 조회 권한 없음</div>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
 
-            {/* Footer */}
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <button onClick={() => setSelectedEmpProfile(null)} className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer">
-                닫기
-              </button>
+                {/* 5. 계좌 정보 */}
+                {role !== "hr" ? (
+                  <div>
+                    <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                      <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><Landmark className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                      급여 계좌 정보
+                    </h4>
+                    <div className="bg-[#FFF8F3] rounded-2xl p-4 border border-[#F3E9E2]">
+                      <div className="text-[12px] text-[#64748B] mb-1">계좌번호</div>
+                      {profileEditMode ? renderBasicInput('account', '계좌번호 입력') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.account || "등록된 계좌 없음"}</div>}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <h4 className="text-[14px] font-semibold text-[#7A3416] mb-3 flex items-center gap-2">
+                      <div className="w-5 h-5 bg-[#FFF2EB] rounded flex items-center justify-center"><Lock className="w-3.5 h-3.5 text-[#FD7B37]"/></div> 
+                      급여 계좌 정보
+                    </h4>
+                    <div className="bg-[#F1F5F9] rounded-2xl p-4 border border-[#E2E8F0]">
+                      <div className="text-[12px] text-[#64748B] mb-1">계좌번호</div>
+                      <div className="text-[14px] font-semibold text-[#94A3B8] italic">🔒 인사팀 조회 권한 없음</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-white border-t border-[#F3E9E2] flex justify-end gap-3">
+                {profileEditMode ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setProfileEditForm(selectedEmpProfile);
+                        setProfileEditMode(false);
+                      }}
+                      className="px-6 py-2.5 bg-slate-100 text-slate-600 font-semibold rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button
+                      onClick={handleProfileSave}
+                      className="px-6 py-2.5 bg-[#FD7B37] text-white font-semibold rounded-xl hover:bg-[#e86726] transition-colors shadow-sm flex items-center gap-2 cursor-pointer"
+                    >
+                      <Save className="w-4 h-4" /> 저장
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setProfileEditMode(true)}
+                      className="px-6 py-2.5 bg-white border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <Edit3 className="w-4 h-4" /> 수정
+                    </button>
+                    <button
+                      onClick={() => setSelectedEmpProfile(null)}
+                      className="px-6 py-2.5 bg-[#16213E] text-white font-semibold rounded-xl hover:bg-[#0f172a] transition-colors shadow-sm cursor-pointer"
+                    >
+                      닫기
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         );
+        } catch(e) {
+            console.error("MODAL ERROR:", e);
+            return (
+              <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 p-4">
+                 <div className="bg-white p-8 rounded text-red-500 font-semibold">
+                    <h1>에러 발생!</h1>
+                    <p>{e.toString()}</p>
+                 </div>
+              </div>
+            );
+        }
       })()}
-
       {/* 🏝️ 공휴일 날짜 추가 모달 */}
       {isHolidayModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="bg-[#EF7D25] p-4 flex justify-between items-center text-white">
-              <h3 className="font-bold text-lg flex items-center gap-2">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
                 <Calendar className="w-5 h-5" /> 공휴일 등록
               </h3>
               <button 
@@ -6055,20 +6579,20 @@ export default function PayrollFlowPrototype() {
             
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">날짜 선택</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">날짜 선택</label>
                 <input
                   type="date"
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-bold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
                   value={newHolidayDate}
                   onChange={(e) => setNewHolidayDate(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1">공휴일 이름</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">공휴일 이름</label>
                 <input
                   type="text"
                   placeholder="예: 어린이날, 대체공휴일 등"
-                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-bold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
+                  className="w-full border-2 border-slate-200 rounded-xl p-3 text-sm font-semibold focus:border-[#EF7D25] focus:ring-0 outline-none transition-colors"
                   value={newHolidayName}
                   onChange={(e) => setNewHolidayName(e.target.value)}
                 />
@@ -6082,7 +6606,7 @@ export default function PayrollFlowPrototype() {
                   setNewHolidayDate("");
                   setNewHolidayName("");
                 }}
-                className="px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors cursor-pointer"
               >
                 취소
               </button>
@@ -6097,7 +6621,7 @@ export default function PayrollFlowPrototype() {
                   setNewHolidayDate("");
                   setNewHolidayName("");
                 }}
-                className="px-4 py-2 text-sm font-bold text-white bg-[#EF7D25] hover:bg-[#d96b1b] rounded-lg shadow-md transition-colors cursor-pointer"
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#EF7D25] hover:bg-[#d96b1b] rounded-lg shadow-md transition-colors cursor-pointer"
               >
                 등록하기
               </button>
@@ -6124,7 +6648,7 @@ function GatePill({ employee }) {
   const hr = employee.hrConfirmed;
 
   return (
-    <div className="flex items-center gap-1 text-xs font-bold select-none">
+    <div className="flex items-center gap-1 text-xs font-semibold select-none">
       <span
         className={`px-2.5 py-1 rounded-l-md border transition-all ${
           ac
@@ -6201,7 +6725,7 @@ function PasswordConfirmModal({ isOpen, title, targetName, onConfirm, onClose })
         </div>
 
         {error && (
-          <div className="text-xs font-bold text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
+          <div className="text-xs font-semibold text-rose-600 bg-rose-50 p-2.5 rounded-lg border border-rose-200">
             ⚠️ {error}
           </div>
         )}
@@ -6217,7 +6741,7 @@ function PasswordConfirmModal({ isOpen, title, targetName, onConfirm, onClose })
           <button
             type="button"
             onClick={() => { setPassword(""); setError(""); onClose(); }}
-            className="px-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition-all cursor-pointer"
+            className="px-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-3 rounded-xl transition-all cursor-pointer"
           >
             취소
           </button>
@@ -6285,19 +6809,19 @@ function DocChip({ ok, label, employeeName = "사원" }) {
           onClick={() => isAttached && setShowModal(true)}
           className={`text-xs font-semibold px-3 py-1 rounded-full border inline-flex items-center gap-1 transition-all ${
             isAttached
-              ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-bold hover:bg-emerald-100 cursor-pointer shadow-xs"
+              ? "bg-emerald-50 border-emerald-300 text-emerald-800 font-semibold hover:bg-emerald-100 cursor-pointer shadow-xs"
               : "bg-rose-50 border-rose-300 text-rose-700 cursor-default"
           }`}
         >
           <span>{label} {isAttached ? "첨부완료" : "미첨부"}</span>
-          {isAttached && <span className="underline text-[11px] text-emerald-700 font-bold ml-0.5">사진보기</span>}
+          {isAttached && <span className="underline text-[11px] text-emerald-700 font-semibold ml-0.5">사진보기</span>}
         </button>
 
         {isAttached && (
           <button
             type="button"
             onClick={downloadFile}
-            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-2.5 py-1 rounded-full border border-slate-300 flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 py-1 rounded-full border border-slate-300 flex items-center gap-1 transition-all cursor-pointer shadow-xs"
             title={`${label} 사진 파일 바로 다운로드`}
           >
             <Download className="w-3 h-3 text-slate-600" /> 다운로드
@@ -6316,10 +6840,10 @@ function DocChip({ ok, label, employeeName = "사원" }) {
           >
             <div className="flex justify-between items-center border-b pb-3">
               <div>
-                <h3 className="font-bold text-lg text-slate-900">{employeeName}님 — {label} 사진 원본</h3>
+                <h3 className="font-semibold text-lg text-slate-900">{employeeName}님 — {label} 사진 원본</h3>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                   첨부된 서류 이미지를 확인하고 PC/모바일에 다운로드할 수 있습니다.
-                  <br /><span className="text-rose-500 font-bold bg-rose-50 px-1.5 py-0.5 rounded mt-1 inline-block border border-rose-100">※ 개인정보 보호법에 따라 모든 첨부 사진은 업로드일로부터 30일 경과 시 자동 영구 삭제됩니다.</span>
+                  <br /><span className="text-rose-500 font-semibold bg-rose-50 px-1.5 py-0.5 rounded mt-1 inline-block border border-rose-100">※ 개인정보 보호법에 따라 모든 첨부 사진은 업로드일로부터 30일 경과 시 자동 영구 삭제됩니다.</span>
                 </p>
               </div>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer">
@@ -6331,7 +6855,7 @@ function DocChip({ ok, label, employeeName = "사원" }) {
               {typeof ok === "string" && ok.startsWith("data:image") ? (
                 <img src={ok} alt={label} className="w-full max-h-96 object-contain rounded-lg" />
               ) : (
-                <div className="text-center p-6 text-slate-500 font-bold">
+                <div className="text-center p-6 text-slate-500 font-semibold">
                   📷 서류 첨부됨 (이미지 데이터)
                 </div>
               )}
@@ -6348,7 +6872,7 @@ function DocChip({ ok, label, employeeName = "사원" }) {
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="px-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 rounded-xl transition-all cursor-pointer"
+                className="px-5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-3 rounded-xl transition-all cursor-pointer"
               >
                 닫기
               </button>

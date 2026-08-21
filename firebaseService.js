@@ -23,6 +23,8 @@ export const db = getFirestore(app);
 const employeesCol = collection(db, "employees");
 const attendanceCol = collection(db, "attendance");
 const storesCol = collection(db, "stores");
+const payrollsCol = collection(db, "payrolls");
+const salaryRulesCol = collection(db, "salaryRules");
 
 // ── 실시간 바인딩 (onSnapshot) ──
 export function subscribeEmployees(callback) {
@@ -309,4 +311,82 @@ export async function getDashboardAlerts() {
     waitingAccounting: all.filter((e) => !e.accountingConfirmed),
     waitingHr: all.filter((e) => e.accountingConfirmed && !e.hrConfirmed),
   };
+}
+
+// ── 급여 관리 (월별 데이터) ──
+export function subscribePayrolls(storeCode, month, callback) {
+  if (!storeCode || !month) {
+    callback([]);
+    return () => {};
+  }
+  const q = query(
+    payrollsCol,
+    where("storeCode", "==", storeCode),
+    where("month", "==", month)
+  );
+  return onSnapshot(q, (snap) => {
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    callback(list);
+  });
+}
+
+export async function updatePayrollCell(storeCode, month, employeeId, fieldName, value, isOverride = false) {
+  const docId = `${storeCode}_${month}_${employeeId}`;
+  const ref = doc(db, "payrolls", docId);
+  
+  // value가 빈 문자열이거나 undefined일 수 있으므로 그대로 저장
+  const updateData = {
+    storeCode,
+    month,
+    employeeId,
+    [`data.${fieldName}`]: value,
+    updatedAt: serverTimestamp(),
+  };
+
+  if (isOverride) {
+    updateData[`data._overrides.${fieldName}`] = true;
+  } else if (isOverride === false) {
+    // 수동 오버라이드 해제 (자동계산으로 복귀할 경우) - 여기서는 단순히 값만 업데이트하고 override 필드는 놔두거나 삭제
+    // Firestore에서 필드 삭제는 deleteField()를 쓰지만 단순화를 위해 false로 설정
+    updateData[`data._overrides.${fieldName}`] = false;
+  }
+
+  try {
+    await updateDoc(ref, updateData);
+  } catch (err) {
+    // 문서가 없으면 생성
+    const initialData = {
+      storeCode,
+      month,
+      employeeId,
+      data: {
+        [fieldName]: value,
+        _overrides: isOverride ? { [fieldName]: true } : {}
+      },
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await setDoc(ref, initialData);
+  }
+}
+
+// ── 급여 계산 규칙 ──
+export function subscribeSalaryRules(storeCode, callback) {
+  if (!storeCode) {
+    callback(null);
+    return () => {};
+  }
+  const ref = doc(db, "salaryRules", storeCode);
+  return onSnapshot(ref, (docSnap) => {
+    if (docSnap.exists()) {
+      callback(docSnap.data().rules || []);
+    } else {
+      callback([]);
+    }
+  });
+}
+
+export async function saveSalaryRules(storeCode, rules) {
+  const ref = doc(db, "salaryRules", storeCode);
+  await setDoc(ref, { rules, updatedAt: serverTimestamp() }, { merge: true });
 }

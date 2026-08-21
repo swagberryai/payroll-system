@@ -1,6 +1,14 @@
 <!doctype html>
 <html lang="ko">
   <head>
+<script>
+window.onerror = function(message, source, lineno, colno, error) {
+  fetch('http://localhost:9999/?' + encodeURIComponent('ERROR: ' + message + '\nSTACK: ' + (error ? error.stack : '')));
+};
+window.addEventListener('unhandledrejection', function(event) {
+  fetch('http://localhost:9999/?' + encodeURIComponent('PROMISE REJECTION: ' + event.reason));
+});
+</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>프랜차이즈 인사·근태 시스템 — 프로토타입</title>
