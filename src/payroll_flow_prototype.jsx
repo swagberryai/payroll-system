@@ -799,6 +799,60 @@ export default function PayrollFlowPrototype() {
   const [resignDateInput, setResignDateInput] = useState(() => new Date().toISOString().split('T')[0]);
   const [resignTextInput, setResignTextInput] = useState("");
 
+  // 🚫 입사 취소 (등록 20일 이내 노쇼/미출근 사원 삭제) 상태 및 핸들러
+  const [isCancelHireModalOpen, setIsCancelHireModalOpen] = useState(false);
+  const [cancelHireEmpId, setCancelHireEmpId] = useState(null);
+  const [cancelHireInputText, setCancelHireInputText] = useState("");
+
+  const isEligibleForCancelHire = (emp) => {
+    if (!emp || emp.resignDate || emp.status === "퇴사") return false;
+    const now = new Date();
+    
+    // 1. 등록일(createdAt) 기준 20일 이내
+    if (emp.createdAt) {
+      const created = emp.createdAt.toDate ? emp.createdAt.toDate() : new Date(emp.createdAt);
+      const diffDays = (now - created) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 20) return true;
+    }
+
+    // 2. 입사일(hireDate) 기준 20일 이내 또는 미래 입사 예정
+    if (emp.hireDate) {
+      const hire = new Date(emp.hireDate);
+      const diffDays = (now - hire) / (1000 * 60 * 60 * 24);
+      if (diffDays <= 20) return true;
+    }
+
+    return false;
+  };
+
+  const openCancelHireModal = (empId) => {
+    setCancelHireEmpId(empId);
+    setCancelHireInputText("");
+    setIsCancelHireModalOpen(true);
+  };
+
+  const confirmCancelHire = async () => {
+    if (cancelHireInputText.trim() !== "입사취소" || !cancelHireEmpId) return;
+    try {
+      const targetEmp = employees.find(e => e.id === cancelHireEmpId);
+      // 1. Firebase DB 완전 삭제
+      await firebaseService.deleteEmployee(cancelHireEmpId);
+
+      // 2. local state 제거
+      setEmployees(prev => prev.filter(e => e.id !== cancelHireEmpId));
+
+      // 3. 모달 닫기 및 초기화
+      setIsCancelHireModalOpen(false);
+      setCancelHireEmpId(null);
+      setCancelHireInputText("");
+
+      flash(`"${targetEmp?.name || '해당'}" 사원의 입사 취소가 완료되어 DB에서 완전히 삭제되었습니다.`);
+    } catch(err) {
+      console.error(err);
+      alert("입사 취소 처리 중 오류가 발생했습니다.");
+    }
+  };
+
   // 근로조건 설정 Config 상태 (localStorage 연동)
   const [laborConfig, setLaborConfig] = useState(() => {
     try {
@@ -3132,13 +3186,21 @@ export default function PayrollFlowPrototype() {
                                 <Edit3 className="w-3 h-3"/> 정보수정
                               </button>
                               {empListGroupTab !== "퇴사자" && (
-                                <button onClick={() => {
-                                  setResigningEmpId(emp.id);
-                                  setIsResignModalOpen(true);
-                                  setResignDateInput("");
-                                }} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
-                                  <LogOut className="w-3 h-3"/> 퇴사처리
-                                </button>
+                                <>
+                                  <button onClick={() => {
+                                    setResigningEmpId(emp.id);
+                                    setResignTextInput("");
+                                    setResignDateInput(new Date().toISOString().split('T')[0]);
+                                    setIsResignModalOpen(true);
+                                  }} className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer">
+                                    <LogOut className="w-3 h-3"/> 퇴사처리
+                                  </button>
+                                  {isEligibleForCancelHire(emp) && (
+                                    <button onClick={() => openCancelHireModal(emp.id)} className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="등록 20일 이내 입사취소 (DB 완전삭제)">
+                                      <Trash2 className="w-3 h-3 text-amber-600"/> 입사취소
+                                    </button>
+                                  )}
+                                </>
                               )}
                             </td>
                           </tr>
@@ -6941,6 +7003,74 @@ export default function PayrollFlowPrototype() {
           </div>
         </div>
       )}
+
+      {/* 🚫 입사 취소 (노쇼/미출근 사원 삭제) 커스텀 모달 */}
+      {isCancelHireModalOpen && (() => {
+        const targetEmp = employees.find(e => e.id === cancelHireEmpId);
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-amber-200 flex flex-col space-y-0">
+              {/* 헤더 */}
+              <div className="px-7 py-5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-xl font-black text-amber-950">입사 취소 처리 (노쇼 / 미출근)</h3>
+                </div>
+                <button
+                  onClick={() => setIsCancelHireModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-amber-100/50 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* 본문 */}
+              <div className="p-8 space-y-6 text-center">
+                <div className="space-y-3">
+                  <div className="text-2xl font-extrabold text-slate-900 leading-snug">
+                    <span className="text-amber-600 font-black px-1">{targetEmp?.name || "선택한"}</span> 직원의 입사를 취소하시겠습니까?
+                  </div>
+                  <p className="text-sm font-bold text-slate-500 leading-relaxed">
+                    입사 취소 시 해당 사원의 모든 신상 및 서류 정보가 <strong className="text-rose-600 font-black">DB에서 완전히 삭제(Wipe)</strong>되며 복구되지 않습니다.
+                    <br />확인을 위해 아래 입력창에 <strong className="text-amber-600 font-black">'입사취소'</strong>라고 적어주세요.
+                  </p>
+                </div>
+
+                <div className="max-w-xs mx-auto pt-2">
+                  <input
+                    type="text"
+                    value={cancelHireInputText}
+                    onChange={(e) => setCancelHireInputText(e.target.value)}
+                    placeholder="입사취소"
+                    autoFocus
+                    className="w-full text-center text-lg font-black tracking-wider border-2 border-slate-300 focus:border-amber-500 rounded-2xl py-3 px-4 shadow-sm focus:outline-none focus:ring-4 focus:ring-amber-100 transition-all placeholder:text-slate-300 text-slate-900 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* 푸터 */}
+              <div className="px-7 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  onClick={() => setIsCancelHireModalOpen(false)}
+                  className="px-5 py-2.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-100 transition-colors cursor-pointer text-sm"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={confirmCancelHire}
+                  disabled={cancelHireInputText.trim() !== "입사취소"}
+                  className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer text-sm"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  입사취소 실행 (DB 완전삭제)
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 🏝️ 공휴일 날짜 추가 모달 */}
       {isHolidayModalOpen && (

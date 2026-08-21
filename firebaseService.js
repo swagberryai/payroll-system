@@ -87,6 +87,12 @@ export async function registerEmployee(form, storeCode, currentUserId = "store_u
   return docRef.id;
 }
 
+// ── 사원 완전 삭제 (입사 취소 / 노쇼) ──
+export async function deleteEmployee(employeeId) {
+  const ref = doc(db, "employees", employeeId);
+  await deleteDoc(ref);
+}
+
 // ── 기존 사원 정보 및 서류 수정/보완 ──
 export async function updateEmployee(employeeId, form, currentUserId = "store_user") {
   const dup = await checkDuplicate(form, employeeId);
