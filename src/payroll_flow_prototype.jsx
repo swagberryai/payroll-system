@@ -6375,7 +6375,7 @@ export default function PayrollFlowPrototype() {
                                       <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>장기요양</th>
                                       <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>고용보험</th>
                                       <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>소득세</th>
-                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>주민세</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>지방소득세</th>
                                       <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>기타공제</th>
                                       <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-black" style={{ width: '75px', minWidth: '75px' }}>공제계</th>
                                     </>
