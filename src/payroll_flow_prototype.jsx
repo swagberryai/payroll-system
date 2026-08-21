@@ -7172,28 +7172,7 @@ export default function PayrollFlowPrototype() {
                         <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.employmentType || "-"}</div>
                       )}
                     </div>
-                    <div>
-                      <div className="text-[12px] text-[#64748B] mb-1">4대보험 가입 대상</div>
-                      {profileEditMode ? (
-                        <label className="flex items-center gap-2 mt-1 cursor-pointer">
-                          <input 
-                            type="checkbox" 
-                            checked={profileEditForm.is4MajorInsurance === true}
-                            onChange={(e) => handleProfileFormChange('is4MajorInsurance', e.target.checked)}
-                            className="w-4 h-4 text-[#FD7B37] rounded focus:ring-[#FD7B37] border-slate-300"
-                          />
-                          <span className="text-[14px] font-semibold text-[#1E293B]">가입 대상자</span>
-                        </label>
-                      ) : (
-                        <div className="text-[14px] font-semibold text-[#1E293B]">
-                          {profileEditForm.is4MajorInsurance === true ? (
-                            <span className="text-blue-600">✅ 대상자</span>
-                          ) : (
-                            <span className="text-slate-400">- 비대상</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">부서</div>
                       {profileEditMode ? (
