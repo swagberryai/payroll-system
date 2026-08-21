@@ -2348,17 +2348,34 @@ export default function PayrollFlowPrototype() {
                                   </button>
                                 </div>
 
-                                {/* 행 메인 바디: 근태구분(정직원 전용) 및 시간 입력 */}
-                                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                                  {/* 근태 구분 (정직원 전용) */}
-                                  {isFulltime && (
-                                    <div className="md:col-span-4">
-                                      <label className="block text-xs font-bold text-slate-600 mb-1">근태 구분</label>
+                                {/* 행 메인 바디: 근태구분, 근무시간, 휴식시간 한 줄 배치 & 상단 우측 실근로 배지 */}
+                                <div className="space-y-1.5">
+                                  {/* 상단 라벨 & 실 근로시간 배지 */}
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-6">
+                                      {isFulltime && (
+                                        <span className="text-xs font-bold text-slate-600">근태 구분</span>
+                                      )}
+                                      <span className="text-xs font-bold text-slate-600">
+                                        근무시간 입력 ({row.mode === "start-end" ? "출퇴근 시간" : row.mode === "start-hours" ? "시작+총시간" : "출근체크 모드"})
+                                      </span>
+                                    </div>
+
+                                    {/* 오른쪽 상단: 실 인정 근로시간 배지 */}
+                                    <div className="text-sm font-black text-[#EF7D25] bg-orange-50 border border-orange-200 px-3.5 py-1 rounded-xl">
+                                      실 근로: {computedHrs}시간
+                                    </div>
+                                  </div>
+
+                                  {/* 하단 입력 컨트롤 한 줄 배치 */}
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    {/* 근태 구분 선택 (정직원 전용 - 폭 줄임) */}
+                                    {isFulltime && (
                                       <div className="flex items-center gap-2">
                                         <select
                                           value={row.type}
                                           onChange={(e) => updateRow(row.rowId, "type", e.target.value)}
-                                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                                          className="w-32 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
                                         >
                                           {ATTEND_TYPES.map((t) => (
                                             <option key={t} value={t}>{t}</option>
@@ -2367,104 +2384,91 @@ export default function PayrollFlowPrototype() {
                                         {row.type === "기타" && (
                                           <input
                                             type="text"
-                                            placeholder="사유 (예비군 등)"
+                                            placeholder="사유"
                                             value={row.reason || ""}
                                             onChange={(e) => updateRow(row.rowId, "reason", e.target.value)}
-                                            className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs"
+                                            className="w-28 bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs"
                                           />
                                         )}
                                       </div>
-                                    </div>
-                                  )}
+                                    )}
 
-                                  {/* 시간 입력 컨트롤 (글로벌 토글 모드 반영 - 정직원은 8컬럼, 아르바이트/일용직은 12컬럼 전체 사용) */}
-                                  <div className={`${isFulltime ? "md:col-span-8" : "md:col-span-12"} space-y-2`}>
-                                    <label className="block text-xs font-bold text-slate-600">
-                                      근무시간 입력 ({row.mode === "start-end" ? "출퇴근 시간" : row.mode === "start-hours" ? "시작+총시간" : "출근체크 모드"})
-                                    </label>
-
-                                    <div className="flex flex-wrap items-center gap-3">
-                                      {row.mode === "start-end" && (
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="time"
-                                            value={row.start}
-                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
-                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
-                                          />
-                                          <span className="text-slate-400 font-bold">~</span>
-                                          <input
-                                            type="time"
-                                            value={row.end}
-                                            onChange={(e) => updateRow(row.rowId, "end", e.target.value)}
-                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
-                                          />
-                                        </div>
-                                      )}
-
-                                      {row.mode === "start-hours" && (
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="time"
-                                            value={row.start}
-                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
-                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
-                                          />
-                                          <input
-                                            type="number"
-                                            placeholder="총 시간(h)"
-                                            value={row.hours}
-                                            onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
-                                            className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
-                                          />
-                                          <span className="text-xs font-bold text-slate-600">시간</span>
-                                        </div>
-                                      )}
-
-                                      {row.mode === "start-only" && (
-                                        <div className="flex items-center gap-2">
-                                          <input
-                                            type="time"
-                                            value={row.start}
-                                            onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
-                                            className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
-                                          />
-                                          <input
-                                            type="number"
-                                            placeholder="총 시간(h)"
-                                            value={row.hours !== undefined ? row.hours : 10}
-                                            onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
-                                            className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
-                                          />
-                                          <span className="text-xs font-bold text-slate-600">시간</span>
-                                        </div>
-                                      )}
-
-                                      {/* ☕ 정직원 & 아르바이트: 휴식(휴게)시간 차감 입력 */}
-                                      {(isFulltime || isParttime) && (
-                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
-                                          <span className="text-xs font-bold text-slate-600">휴식시간:</span>
-                                          <select
-                                            value={row.breakMinutes ?? (isFulltime ? 120 : 60)}
-                                            onChange={(e) => updateRow(row.rowId, "breakMinutes", Number(e.target.value))}
-                                            className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-extrabold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#EF7D25]"
-                                          >
-                                            <option value={0}>0분</option>
-                                            <option value={30}>30분</option>
-                                            <option value={60}>60분(1시간)</option>
-                                            <option value={90}>90분(1시간30분)</option>
-                                            <option value={120}>120분(2시간)</option>
-                                            <option value={150}>150분(2시간30분)</option>
-                                            <option value={180}>180분(3시간)</option>
-                                          </select>
-                                        </div>
-                                      )}
-
-                                      {/* 계산된 실 인정 근로시간 */}
-                                      <div className="text-sm font-black text-[#EF7D25] bg-orange-50 border border-orange-200 px-3.5 py-1.5 rounded-xl ml-auto">
-                                        실 근로: {computedHrs}시간
+                                    {/* 시간 입력 */}
+                                    {row.mode === "start-end" && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="time"
+                                          value={row.start}
+                                          onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                          className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
+                                        />
+                                        <span className="text-slate-400 font-bold">~</span>
+                                        <input
+                                          type="time"
+                                          value={row.end}
+                                          onChange={(e) => updateRow(row.rowId, "end", e.target.value)}
+                                          className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs focus:ring-2 focus:ring-[#EF7D25]"
+                                        />
                                       </div>
-                                    </div>
+                                    )}
+
+                                    {row.mode === "start-hours" && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="time"
+                                          value={row.start}
+                                          onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                          className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                        />
+                                        <input
+                                          type="number"
+                                          placeholder="총 시간(h)"
+                                          value={row.hours}
+                                          onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
+                                          className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                        />
+                                        <span className="text-xs font-bold text-slate-600">시간</span>
+                                      </div>
+                                    )}
+
+                                    {row.mode === "start-only" && (
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="time"
+                                          value={row.start}
+                                          onChange={(e) => updateRow(row.rowId, "start", e.target.value)}
+                                          className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                        />
+                                        <input
+                                          type="number"
+                                          placeholder="총 시간(h)"
+                                          value={row.hours !== undefined ? row.hours : 10}
+                                          onChange={(e) => updateRow(row.rowId, "hours", e.target.value)}
+                                          className="w-24 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-sm font-bold text-slate-900 shadow-xs"
+                                        />
+                                        <span className="text-xs font-bold text-slate-600">시간</span>
+                                      </div>
+                                    )}
+
+                                    {/* ☕ 정직원 & 아르바이트: 휴식(휴게)시간 차감 입력 */}
+                                    {(isFulltime || isParttime) && (
+                                      <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+                                        <span className="text-xs font-bold text-slate-600">휴식시간:</span>
+                                        <select
+                                          value={row.breakMinutes ?? (isFulltime ? 120 : 60)}
+                                          onChange={(e) => updateRow(row.rowId, "breakMinutes", Number(e.target.value))}
+                                          className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-extrabold text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#EF7D25]"
+                                        >
+                                          <option value={0}>0분</option>
+                                          <option value={30}>30분</option>
+                                          <option value={60}>60분(1시간)</option>
+                                          <option value={90}>90분(1시간30분)</option>
+                                          <option value={120}>120분(2시간)</option>
+                                          <option value={150}>150분(2시간30분)</option>
+                                          <option value={180}>180분(3시간)</option>
+                                        </select>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
 
