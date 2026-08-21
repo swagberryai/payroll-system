@@ -635,6 +635,7 @@ export default function PayrollFlowPrototype() {
   // 직원 관리 탭 관련 State
   const [empManagementTab, setEmpManagementTab] = useState("working"); // working, resigned, search
   const [empSearchTerm, setEmpSearchTerm] = useState("");
+  const [selectedEmpStoreFilter, setSelectedEmpStoreFilter] = useState("all"); // "all" | storeName
   const [empSortConfig, setEmpSortConfig] = useState({ key: "storeCode", direction: "asc" }); // 정렬 상태
   const [selectedEmpProfile, setSelectedEmpProfile] = useState(null); // 모달 표시용 직원 정보
   const [profileEditMode, setProfileEditMode] = useState(false);
@@ -1165,6 +1166,13 @@ export default function PayrollFlowPrototype() {
       { id: "s3", name: "고메스퀘어 신대방점", code: "STR-003", address: "서울 동작구 신대방길 12", phone: "02-888-9999", businessNumber: "345-67-89012", businessCert: true, createdAt: "2026-08-10" },
     ];
   }, [stores]);
+
+  const allStoreOptions = useMemo(() => {
+    const fromStores = (stores || []).map(s => s.name).filter(Boolean);
+    const fromEmps = (employees || []).map(e => e.storeCode).filter(Boolean);
+    const combined = Array.from(new Set([...fromStores, ...fromEmps]));
+    return combined.sort((a, b) => a.localeCompare(b));
+  }, [stores, employees]);
 
   const currentStoreObj = useMemo(() => {
     return storeList.find((s) => s.name === currentStoreCode || s.code === currentStoreCode) || {
@@ -1833,18 +1841,25 @@ export default function PayrollFlowPrototype() {
       });
     };
 
-    const working = sortEmps(employees.filter(e => !e.resignDate && e.status !== "퇴사"));
-    const resigned = sortEmps(employees.filter(e => e.resignDate || e.status === "퇴사"));
+    let filtered = employees;
+    if (selectedEmpStoreFilter !== "all") {
+      filtered = employees.filter(e => e.storeCode === selectedEmpStoreFilter);
+    }
+
+    const working = sortEmps(filtered.filter(e => !e.resignDate && e.status !== "퇴사"));
+    const resigned = sortEmps(filtered.filter(e => e.resignDate || e.status === "퇴사"));
     
     let searched = [];
     if (empSearchTerm.trim()) {
       searched = sortEmps(
-        employees.filter(e => e.name.toLowerCase().includes(empSearchTerm.toLowerCase().trim()))
+        filtered.filter(e => e.name.toLowerCase().includes(empSearchTerm.toLowerCase().trim()))
       );
+    } else {
+      searched = sortEmps(filtered);
     }
     
     return { workingEmps: working, resignedEmps: resigned, searchResultEmps: searched };
-  }, [employees, empSearchTerm, empSortConfig]);
+  }, [employees, empSearchTerm, empSortConfig, selectedEmpStoreFilter]);
 
   // 🎯 회계팀 대시보드 총 이슈 식별 목록 (고유 ID)
   const currentAccountingIssues = useMemo(() => {
@@ -3347,30 +3362,39 @@ export default function PayrollFlowPrototype() {
 
               function getEmpSummary(empId) {
                 const emp = employees.find(e => e.id === empId);
-                const isParttime = emp?.employmentType === "아르바이트";
+                const isParttime = emp?.employmentType === "아르바이트" || emp?.employmentType === "일용직";
                 const monthRecs = monthDates.map(d => getCellData(empId, d)).filter(Boolean);
                 let actualDaysOff = 0;
                 let annualLeave = 0;
                 let halfLeave = 0;
                 let holidayWork = 0;
+                let totalWorkHours = 0;
+
                 monthRecs.forEach(r => {
                   const t = r.type || r.attendanceType;
                   if (t === "휴무") actualDaysOff++;
                   if (t === "연차") annualLeave++;
                   if (t === "반차") halfLeave += 0.5;
                   
+                  const hrs = parseFloat(r.hours) || 0;
+                  if (hrs > 0) {
+                    totalWorkHours += hrs;
+                  }
+                  
                   if (holidaySet.has(r.date)) {
                     if (isParttime) {
-                      if (t === "근무" && r.hours) holidayWork += parseFloat(r.hours) || 0;
+                      if (hrs > 0) holidayWork += hrs;
                     } else {
-                      if (t === "정상출근" || t === "지각" || t === "조퇴") holidayWork++;
+                      if (t === "정상출근" || t === "지각" || t === "조퇴" || t === "근무") holidayWork += (hrs || 1);
                     }
                   }
                 });
+
+                const weekdayWorkHours = Math.max(0, totalWorkHours - holidayWork);
                 const remaining = grantedDays - actualDaysOff;
                 const prevLeave = (schedulePrevLeave[empId] || {})[prevMonth] || 0;
                 const carried = grantedDays + prevLeave;
-                return { actualDaysOff, annualLeave: annualLeave + halfLeave, holidayWork, remaining, prevLeave, carried };
+                return { actualDaysOff, annualLeave: annualLeave + halfLeave, holidayWork, totalWorkHours, weekdayWorkHours, remaining, prevLeave, carried };
               }
 
               // 셀 저장
@@ -3415,9 +3439,9 @@ export default function PayrollFlowPrototype() {
                 const headers = ["No.", "이름", ...activeDates.map(d => d.slice(5))];
                 if (isMonthly) {
                   if (isParttimeMode) {
-                    headers.push("공휴근무", "비고");
+                    headers.push("평일근무", "공휴근무", "총근무", "비고");
                   } else {
-                    headers.push("부여휴무", "실휴무", "잔여휴무", "전월잔휴", "이월대휴", "연차", "공휴일근무");
+                    headers.push("부여휴무", "실휴무", "잔여휴무", "전월잔휴", "이월대휴", "연차", "공휴근무", "비고");
                   }
                 }
                 
@@ -3433,9 +3457,10 @@ export default function PayrollFlowPrototype() {
                   if (isMonthly) {
                     if (isParttimeMode) {
                       const remark = (scheduleRemarks[emp.id] || {})[currentMonth] || "";
-                      row.push(s.holidayWork, remark);
+                      row.push(s.weekdayWorkHours || 0, s.holidayWork || 0, s.totalWorkHours || 0, remark);
                     } else {
-                      row.push(grantedDays, s.actualDaysOff, s.remaining, s.prevLeave, s.carried, s.annualLeave, s.holidayWork);
+                      const remark = (scheduleRemarks[emp.id] || {})[currentMonth] || "";
+                      row.push(grantedDays, s.actualDaysOff, s.remaining, s.prevLeave, s.carried, s.annualLeave, s.holidayWork, remark);
                     }
                   }
                   return row;
@@ -3628,10 +3653,10 @@ export default function PayrollFlowPrototype() {
                                     );
                                   })}
 
-                                  {/* 요약 열 (월간만) */}
+                                  {/* 요약 열 (월간만 - isSummaryExpanded일 때 표시) */}
                                   {scheduleViewMode === "monthly" && isSummaryExpanded && (
                                     <>
-                                      {!isParttimeMode && (
+                                      {!isParttimeMode ? (
                                         <>
                                           <th className="px-1 py-2 text-center font-bold text-slate-600 border-l-2 border-slate-300 bg-blue-50 w-[44px]">부여<br/>휴무</th>
                                           <th className="px-1 py-2 text-center font-bold text-slate-600 bg-blue-50 w-[44px]">실<br/>휴무</th>
@@ -3639,11 +3664,17 @@ export default function PayrollFlowPrototype() {
                                           <th className="px-1 py-2 text-center font-bold text-slate-600 bg-blue-50 w-[44px]">전월<br/>잔휴</th>
                                           <th className="px-1 py-2 text-center font-bold text-slate-600 bg-blue-50 w-[44px]">이월<br/>대휴</th>
                                           <th className="px-1 py-2 text-center font-bold text-slate-600 bg-amber-50 w-[44px]">연차</th>
+                                          <th className="px-1 py-2 text-center font-bold text-slate-600 bg-rose-50 w-[44px]">공휴<br/>근무</th>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <th className="px-1 py-2 text-center font-bold text-slate-700 border-l-2 border-slate-300 bg-emerald-50 w-[48px]">평일<br/>근무</th>
+                                          <th className="px-1 py-2 text-center font-bold text-slate-700 bg-rose-50 w-[48px]">공휴<br/>근무</th>
+                                          <th className="px-1 py-2 text-center font-bold text-slate-700 bg-blue-50 w-[48px]">총<br/>근무</th>
                                         </>
                                       )}
-                                      <th className={`px-1 py-2 text-center font-bold text-slate-600 bg-rose-50 w-[44px] ${isParttimeMode ? "border-l-2 border-slate-300" : ""}`}>공휴<br/>근무</th>
-                                      <th className="px-2 py-2 text-center font-bold text-slate-600 bg-slate-100 no-print" style={{width:"66px"}}>비고</th>
-                                      <th className="px-2 py-2 text-center font-bold text-slate-600 bg-slate-100 hidden print:table-cell" style={{width:"66px"}}>비고</th>
+                                      <th className="px-2 py-2 text-center font-bold text-slate-600 bg-slate-100 no-print" style={{ width: "160px", minWidth: "160px" }}>비고</th>
+                                      <th className="px-2 py-2 text-center font-bold text-slate-600 bg-slate-100 hidden print:table-cell" style={{ width: "160px", minWidth: "160px" }}>비고</th>
                                     </>
                                   )}
                                 </tr>
@@ -3724,10 +3755,10 @@ export default function PayrollFlowPrototype() {
                                         );
                                       })}
 
-                                      {/* 요약 열 (월간만) */}
+                                      {/* 요약 열 (월간만 - isSummaryExpanded일 때 표시) */}
                                       {scheduleViewMode === "monthly" && isSummaryExpanded && (
                                         <>
-                                          {!isParttimeMode && (
+                                          {!isParttimeMode ? (
                                             <>
                                               <td className="text-center font-bold text-blue-700 border-l-2 border-slate-300 bg-blue-50 py-2">{grantedDays}</td>
                                               <td className="text-center font-bold text-slate-700 bg-blue-50 py-2">{summary.actualDaysOff}</td>
@@ -3753,15 +3784,30 @@ export default function PayrollFlowPrototype() {
                                               </td>
                                               <td className="text-center font-bold text-indigo-700 bg-blue-50 py-2">{summary.carried}</td>
                                               <td className="text-center text-amber-700 bg-amber-50 py-2">{summary.annualLeave > 0 ? summary.annualLeave : "-"}</td>
+                                              <td className="text-center text-rose-700 bg-rose-50 py-2">{summary.holidayWork > 0 ? summary.holidayWork : "-"}</td>
+                                            </>
+                                          ) : (
+                                            <>
+                                              {/* 평일근무 (총근무 - 공휴근무) */}
+                                              <td className="text-center font-black text-emerald-800 bg-emerald-50/60 border-l-2 border-slate-300 py-2">
+                                                {summary.weekdayWorkHours > 0 ? summary.weekdayWorkHours : "-"}
+                                              </td>
+                                              {/* 공휴근무 */}
+                                              <td className="text-center font-black text-rose-700 bg-rose-50 py-2">
+                                                {summary.holidayWork > 0 ? summary.holidayWork : "-"}
+                                              </td>
+                                              {/* 총근무 */}
+                                              <td className="text-center font-black text-blue-700 bg-blue-50 py-2">
+                                                {summary.totalWorkHours > 0 ? summary.totalWorkHours : "-"}
+                                              </td>
                                             </>
                                           )}
-                                          <td className={`text-center text-rose-700 bg-rose-50 py-2 ${isParttimeMode ? "border-l-2 border-slate-300" : ""}`}>{summary.holidayWork > 0 ? summary.holidayWork : "-"}</td>
                                           {/* 비고 (화면) */}
-                                          <td className="bg-slate-50 py-1 px-1 no-print">
+                                          <td className="bg-slate-50 py-1 px-1.5 no-print" style={{ width: "160px", minWidth: "160px" }}>
                                             <input
                                               type="text"
-                                              placeholder="비고"
-                                              className="w-full border border-slate-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#EF7D25] bg-white"
+                                              placeholder="비고 입력"
+                                              className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#EF7D25] bg-white font-medium shadow-xs"
                                               value={(scheduleRemarks[emp.id] || {})[currentMonth] || ""}
                                               onChange={e => {
                                                 const v = e.target.value;
@@ -3775,7 +3821,7 @@ export default function PayrollFlowPrototype() {
                                             />
                                           </td>
                                           {/* 비고 (인쇄) */}
-                                          <td className="bg-slate-50 py-1 px-1 hidden print:table-cell">
+                                          <td className="bg-slate-50 py-1 px-1.5 hidden print:table-cell" style={{ width: "160px", minWidth: "160px" }}>
                                             {(scheduleRemarks[emp.id] || {})[currentMonth] || ""}
                                           </td>
                                         </>
@@ -3799,7 +3845,7 @@ export default function PayrollFlowPrototype() {
                                         </td>
                                       );
                                     })}
-                                    <td colSpan={isParttimeMode ? 2 : 8} className="px-3 text-xs border-l-2 border-slate-300 text-slate-500">
+                                    <td colSpan={isParttimeMode ? 4 : 8} className="px-3 text-xs border-l-2 border-slate-300 text-slate-500">
                                       {!isParttimeMode && (<>이달 부여휴무: <strong className="text-blue-700">{grantedDays}일</strong>&nbsp;&nbsp;|&nbsp;&nbsp;</>)}
                                       공휴일: <strong className="text-rose-600">{companyHolidays.filter(h => h.date.startsWith(currentMonth)).length}일</strong>
                                     </td>
@@ -5736,19 +5782,48 @@ export default function PayrollFlowPrototype() {
         {((role === "accounting" && accountingSubtab === "employees") || (role === "hr" && hrSubtab === "employees")) && (
           <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in duration-200">
             {/* 상단: 직원 관리 필터 및 검색 */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
-                <button onClick={() => setEmpManagementTab("working")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "working" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>근무자</button>
-                <button onClick={() => setEmpManagementTab("resigned")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "resigned" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
-                <button onClick={() => setEmpManagementTab("search")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "search" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>검색</button>
-              </div>
+            {(() => {
+              const activeList = empManagementTab === "working" ? workingEmps : empManagementTab === "resigned" ? resignedEmps : searchResultEmps;
+              return (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+                      <button onClick={() => setEmpManagementTab("working")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "working" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>근무자</button>
+                      <button onClick={() => setEmpManagementTab("resigned")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "resigned" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>퇴사자</button>
+                      <button onClick={() => setEmpManagementTab("search")} className={`px-6 py-2 rounded-lg text-sm font-bold transition-all ${empManagementTab === "search" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>검색</button>
+                    </div>
 
-              {empManagementTab === "search" && (
-                <div className="relative w-full md:w-80">
-                  <input type="text" placeholder="이름으로 사원 검색..." value={empSearchTerm} onChange={(e) => setEmpSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#EF7D25]" />
+                    {empManagementTab === "search" && (
+                      <div className="relative w-full md:w-64">
+                        <input type="text" placeholder="이름으로 사원 검색..." value={empSearchTerm} onChange={(e) => setEmpSearchTerm(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#EF7D25]" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 🏬 매장 선택 드롭다운 & 인원수 뱃지 */}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Store className="w-4 h-4 text-slate-400" />
+                      <select 
+                        value={selectedEmpStoreFilter} 
+                        onChange={(e) => setSelectedEmpStoreFilter(e.target.value)}
+                        className="bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer"
+                      >
+                        <option value="all">🏢 전체 매장</option>
+                        {allStoreOptions.map(storeName => (
+                          <option key={storeName} value={storeName}>{storeName}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="px-4 py-2 bg-orange-50 border border-orange-200 text-[#EF7D25] rounded-xl text-sm font-black flex items-center gap-2 shadow-xs">
+                      <Users className="w-4 h-4" />
+                      <span>{selectedEmpStoreFilter === "all" ? `전체 ${activeList.length}명` : `${selectedEmpStoreFilter} ${activeList.length}명`}</span>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* 하단: 리스트 렌더링 */}
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -6138,7 +6213,7 @@ export default function PayrollFlowPrototype() {
                         <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
                           <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
                           <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '50px', width: '50px' }} rowSpan={2}>부서</th>
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직책</th>
+                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직급</th>
                           <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '60px', width: '60px' }} rowSpan={2}>성명</th>
                           
                           {(salaryViewMode === "all" || salaryViewMode === "partA") && (
@@ -6208,7 +6283,7 @@ export default function PayrollFlowPrototype() {
                             <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
                               <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
                               <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
-                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.position || ""}</td>
+                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.rank || emp.position || ""}</td>
                               <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
                                 <span 
                                   onClick={() => setSelectedEmpProfile(emp)}
