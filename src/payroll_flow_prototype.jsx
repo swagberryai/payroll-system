@@ -652,8 +652,16 @@ export default function PayrollFlowPrototype() {
   const handleProfileSave = async () => {
     try {
       if (profileEditForm.id) {
+        const payrollFields = ['monthlySalary', 'mealAllowance', 'carAllowance', 'childAllowance', 'nationalPension', 'incomeTax', 'localTax'];
+        for (const field of payrollFields) {
+          const val = profileEditForm[`_payroll_${field}`];
+          if (val !== undefined) {
+            handleCellChange(profileEditForm.id, field, val, true);
+          }
+        }
         await firebaseService.updateEmployee(profileEditForm.id, profileEditForm);
         setEmployees(prev => prev.map(e => e.id === profileEditForm.id ? { ...e, ...profileEditForm } : e));
+        setSelectedEmpProfile({ ...profileEditForm });
         setProfileEditMode(false);
         alert('저장되었습니다.');
       }
@@ -6419,9 +6427,12 @@ export default function PayrollFlowPrototype() {
         const nationalPensionRaw = safeGetPayroll(selectedEmpProfile.id, 'nationalPension') || "";
         
         const renderFormattedInput = (field, placeholder) => {
-          const firebaseVal = safeGetPayroll(selectedEmpProfile.id, field) || "";
-          const rawValue = profileEditForm[`_payroll_${field}`] !== undefined ? profileEditForm[`_payroll_${field}`] : firebaseVal;
-          const displayValue = !isNaN(Number(rawValue)) && rawValue !== "" ? Number(rawValue).toLocaleString() : rawValue;
+          const firebaseVal = safeGetPayroll(selectedEmpProfile.id, field) || profileEditForm[field] || "";
+          const rawValue = profileEditForm[`_payroll_${field}`] !== undefined 
+            ? profileEditForm[`_payroll_${field}`] 
+            : (profileEditForm[field] !== undefined ? profileEditForm[field] : firebaseVal);
+          
+          const displayValue = !isNaN(Number(rawValue)) && rawValue !== "" && rawValue !== null ? Number(rawValue).toLocaleString() : (rawValue || "");
           
           return (
             <input 
@@ -6431,6 +6442,7 @@ export default function PayrollFlowPrototype() {
                 const cleaned = e.target.value.replace(/,/g, '');
                 if (/^\d*$/.test(cleaned) || cleaned === '') {
                   handleProfileFormChange(`_payroll_${field}`, cleaned);
+                  handleProfileFormChange(field, cleaned);
                 }
               }}
               placeholder={placeholder}
@@ -6521,8 +6533,16 @@ export default function PayrollFlowPrototype() {
                       )}
                     </div>
                     <div>
-                      <div className="text-[12px] text-[#64748B] mb-1">직책/부서</div>
-                      {profileEditMode ? renderBasicInput('position', '직책/부서 입력') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.position || profileEditForm.department || "기본 (담당/매니저)"}</div>}
+                      <div className="text-[12px] text-[#64748B] mb-1">부서</div>
+                      {profileEditMode ? renderBasicInput('department', '부서 입력 (예: 조리팀)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.department || profileEditForm.dept || "-"}</div>}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">직책</div>
+                      {profileEditMode ? renderBasicInput('position', '직책 입력 (예: 팀장, 매니저)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.position || "-"}</div>}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">직급</div>
+                      {profileEditMode ? renderBasicInput('rank', '직급 입력 (예: 1급, 2급, 주임)') : <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.rank || "-"}</div>}
                     </div>
                     <div>
                       <div className="text-[12px] text-[#64748B] mb-1">입사일</div>
@@ -6583,10 +6603,31 @@ export default function PayrollFlowPrototype() {
                       급여/공제 정보 (급여관리 연동)
                     </h4>
                     <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-2 gap-4 border border-[#F3E9E2]">
+                      {/* 1. 월정급여 */}
                       <div>
                         <div className="text-[12px] text-[#64748B] mb-1">월정급여</div>
                         {renderFormattedInput('monthlySalary', '금액 입력')}
                       </div>
+
+                      {/* 2. 식대 */}
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">식대</div>
+                        {renderFormattedInput('mealAllowance', '금액 입력')}
+                      </div>
+
+                      {/* 3. 자가운전 */}
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">자가운전</div>
+                        {renderFormattedInput('carAllowance', '금액 입력')}
+                      </div>
+
+                      {/* 4. 자녀공제 */}
+                      <div>
+                        <div className="text-[12px] text-[#64748B] mb-1">자녀공제</div>
+                        {renderFormattedInput('childAllowance', '금액 입력')}
+                      </div>
+
+                      {/* 5. 국민연금 */}
                       <div>
                         <div className="text-[12px] text-[#64748B] mb-1">국민연금</div>
                         {profileEditMode ? (
@@ -6595,8 +6636,10 @@ export default function PayrollFlowPrototype() {
                             onChange={(e) => {
                               if(e.target.value === '60세 이상 미가입') {
                                 handleCellChange(selectedEmpProfile.id, 'nationalPension', '60세 이상 미가입', true);
+                                handleProfileFormChange('_payroll_nationalPension', '60세 이상 미가입');
                               } else {
                                 handleCellChange(selectedEmpProfile.id, 'nationalPension', '', true);
+                                handleProfileFormChange('_payroll_nationalPension', '');
                               }
                             }}
                             className="w-full bg-white border border-[#FD7B37] rounded-lg px-3 py-1.5 text-[14px] font-semibold text-[#1E293B] focus:outline-none focus:ring-2 focus:ring-[#FD7B37] mb-2"
@@ -6606,18 +6649,22 @@ export default function PayrollFlowPrototype() {
                             <option value="60세 이상 미가입">60세 이상 미가입</option>
                           </select>
                         ) : (
-                          <div className="text-[14px] font-semibold text-[#1E293B]">{nationalPensionRaw === '60세 이상 미가입' ? '60세 이상 미가입' : (nationalPensionRaw || "자동계산")}</div>
+                          <div className="text-[14px] font-semibold text-[#1E293B]">{nationalPensionRaw === '60세 이상 미가입' ? '60세 이상 미가입' : (nationalPensionRaw ? Number(nationalPensionRaw).toLocaleString() : "자동계산")}</div>
                         )}
                         {(profileEditMode && nationalPensionRaw !== '60세 이상 미가입') && (
                           renderFormattedInput('nationalPension', '금액 입력')
                         )}
                       </div>
+
+                      {/* 6. 소득세 */}
                       <div>
                         <div className="text-[12px] text-[#64748B] mb-1">소득세</div>
                         {renderFormattedInput('incomeTax', '금액 입력')}
                       </div>
+
+                      {/* 7. 지방세 */}
                       <div>
-                        <div className="text-[12px] text-[#64748B] mb-1">지방소득세</div>
+                        <div className="text-[12px] text-[#64748B] mb-1">지방세</div>
                         {renderFormattedInput('localTax', '금액 입력')}
                       </div>
                     </div>
