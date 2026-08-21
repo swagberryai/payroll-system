@@ -2768,9 +2768,17 @@ export default function PayrollFlowPrototype() {
     }
   };
 
-  const renderEditableCell =  (empId, fieldName, isCalculated = false) => {
+  const renderEditableCell =  (empId, fieldName, isCalculated = false, calculatedValue = null) => {
     const isOverride = getPayrollOverride(empId, fieldName);
-    const value = calculateCell(empId, fieldName);
+    
+    let value;
+    if (isOverride) {
+      value = getPayrollCell(empId, fieldName);
+    } else if (calculatedValue !== null) {
+      value = calculatedValue;
+    } else {
+      value = calculateCell(empId, fieldName);
+    }
     
     // 3자리마다 콤마 포맷팅 (단위가 시간이면 소수점 허용)
     const formattedValue = fieldName.includes("Hours") || fieldName === "workDays" 
@@ -6457,6 +6465,30 @@ export default function PayrollFlowPrototype() {
                                   const socialConfig = currentStoreObj?.rules?.socialInsurance || { targetHours: 60, targetDays: 8 };
                                   const is4MajorEligible = emp.is4MajorInsurance === true || (totalHoursSum >= socialConfig.targetHours || workDaysCount >= socialConfig.targetDays);
 
+                                  // -----------------------------------------
+                                  // 자동 계산 로직 (아르바이트/일용직)
+                                  // -----------------------------------------
+                                  const hourlyWage = Number(emp.hourlyWage) || 10030; // 기본 최저시급 대체
+                                  
+                                  // 급여 계산 (사용자 요청 수식 반영)
+                                  const calcBasePay = normalHoursSum * hourlyWage;
+                                  const calcOtPay = Math.round(otHoursSum * hourlyWage * 1.5);
+                                  const calcHolidayPay = Math.round(holidayHoursSum * hourlyWage * 1.5);
+                                  const calcGrossPay = calcBasePay + calcOtPay + calcHolidayPay;
+
+                                  // 공제액 계산 (10원 단위 절사)
+                                  const calcNationalPension = Number(emp.nationalPension) || 0;
+                                  const calcHealthIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.03595 / 10) * 10 : 0;
+                                  const calcLongTermCare = is4MajorEligible ? Math.floor(calcHealthIns * 0.1314 / 10) * 10 : 0;
+                                  const calcEmploymentIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.009 / 10) * 10 : 0;
+                                  const calcIncomeTax = Number(emp.incomeTax) || 0;
+                                  const calcLocalTax = Number(emp.localTax) || 0;
+                                  const calcOtherDeduction = Number(safeGetPayroll(emp.id, 'otherDeduction')) || 0;
+
+                                  const calcDeductionTotal = calcNationalPension + calcHealthIns + calcLongTermCare + calcEmploymentIns + calcIncomeTax + calcLocalTax + calcOtherDeduction;
+
+                                  const calcNetPay = calcGrossPay - calcDeductionTotal;
+
                                   return (
                                     <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
                                       {/* NO */}
@@ -6514,23 +6546,23 @@ export default function PayrollFlowPrototype() {
                                       {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                                         <>
                                           {/* 💰 급여 세부 셀 */}
-                                          {renderEditableCell(emp.id, 'basePay')}
-                                          {renderEditableCell(emp.id, 'otPay')}
-                                          {renderEditableCell(emp.id, 'holidayPay')}
-                                          {renderEditableCell(emp.id, 'grossPay', true)}
+                                          {renderEditableCell(emp.id, 'basePay', true, calcBasePay)}
+                                          {renderEditableCell(emp.id, 'otPay', true, calcOtPay)}
+                                          {renderEditableCell(emp.id, 'holidayPay', true, calcHolidayPay)}
+                                          {renderEditableCell(emp.id, 'grossPay', true, calcGrossPay)}
 
                                           {/* 📉 공제금액 세부 셀 */}
-                                          {renderEditableCell(emp.id, 'nationalPension')}
-                                          {renderEditableCell(emp.id, 'healthIns')}
-                                          {renderEditableCell(emp.id, 'longTermCare')}
-                                          {renderEditableCell(emp.id, 'employmentIns')}
-                                          {renderEditableCell(emp.id, 'incomeTax')}
-                                          {renderEditableCell(emp.id, 'localTax')}
-                                          {renderEditableCell(emp.id, 'otherDeduction')}
-                                          {renderEditableCell(emp.id, 'deductionTotal', true)}
+                                          {renderEditableCell(emp.id, 'nationalPension', true, calcNationalPension)}
+                                          {renderEditableCell(emp.id, 'healthIns', true, calcHealthIns)}
+                                          {renderEditableCell(emp.id, 'longTermCare', true, calcLongTermCare)}
+                                          {renderEditableCell(emp.id, 'employmentIns', true, calcEmploymentIns)}
+                                          {renderEditableCell(emp.id, 'incomeTax', true, calcIncomeTax)}
+                                          {renderEditableCell(emp.id, 'localTax', true, calcLocalTax)}
+                                          {renderEditableCell(emp.id, 'otherDeduction', false)}
+                                          {renderEditableCell(emp.id, 'deductionTotal', true, calcDeductionTotal)}
 
                                           {/* 💵 차인지급액 */}
-                                          {renderEditableCell(emp.id, 'netPay', true)}
+                                          {renderEditableCell(emp.id, 'netPay', true, calcNetPay)}
                                         </>
                                       )}
                                     </tr>
