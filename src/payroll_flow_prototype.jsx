@@ -654,7 +654,7 @@ export default function PayrollFlowPrototype() {
   const handleProfileSave = async () => {
     try {
       if (profileEditForm.id) {
-        const payrollFields = ['monthlySalary', 'mealAllowance', 'carAllowance', 'childAllowance', 'nationalPension', 'incomeTax', 'localTax'];
+        const payrollFields = ['monthlySalary', 'mealAllowance', 'carAllowance', 'childAllowance', 'nationalPension', 'incomeTax', 'localTax', 'hourlyWage', 'weekdayWage', 'weekendWage'];
         for (const field of payrollFields) {
           const val = profileEditForm[`_payroll_${field}`];
           if (val !== undefined) {
@@ -6886,29 +6886,47 @@ export default function PayrollFlowPrototype() {
                       급여/공제 정보 (급여관리 연동)
                     </h4>
                     <div className="bg-[#FFF8F3] rounded-2xl p-4 grid grid-cols-2 gap-4 border border-[#F3E9E2]">
-                      {/* 1. 월정급여 */}
-                      <div>
-                        <div className="text-[12px] text-[#64748B] mb-1">월정급여</div>
-                        {renderFormattedInput('monthlySalary', '금액 입력')}
-                      </div>
+                      {/* 1. 고용형태별 급여 입력 (월정급여 / 시급 / 평일·주말일급) */}
+                      {profileEditForm.employmentType === "정직원" ? (
+                        <div>
+                          <div className="text-[12px] text-[#64748B] mb-1">월정급여</div>
+                          {renderFormattedInput('monthlySalary', '금액 입력')}
+                        </div>
+                      ) : profileEditForm.employmentType === "일용직" ? (
+                        <>
+                          <div>
+                            <div className="text-[12px] text-[#64748B] mb-1">평일일급</div>
+                            {renderFormattedInput('weekdayWage', '예: 130,000')}
+                          </div>
+                          <div>
+                            <div className="text-[12px] text-[#64748B] mb-1">주말일급</div>
+                            {renderFormattedInput('weekendWage', '예: 150,000')}
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <div className="text-[12px] text-[#64748B] mb-1">시급</div>
+                          {renderFormattedInput('hourlyWage', '13,000')}
+                        </div>
+                      )}
 
-                      {/* 2. 식대 */}
-                      <div>
-                        <div className="text-[12px] text-[#64748B] mb-1">식대</div>
-                        {renderFormattedInput('mealAllowance', '금액 입력')}
-                      </div>
-
-                      {/* 3. 자가운전 */}
-                      <div>
-                        <div className="text-[12px] text-[#64748B] mb-1">자가운전</div>
-                        {renderFormattedInput('carAllowance', '금액 입력')}
-                      </div>
-
-                      {/* 4. 자녀공제 */}
-                      <div>
-                        <div className="text-[12px] text-[#64748B] mb-1">자녀공제</div>
-                        {renderFormattedInput('childAllowance', '금액 입력')}
-                      </div>
+                      {/* 2. 식대, 자가운전, 자녀공제 (정직원만 적용) */}
+                      {profileEditForm.employmentType === "정직원" && (
+                        <>
+                          <div>
+                            <div className="text-[12px] text-[#64748B] mb-1">식대</div>
+                            {renderFormattedInput('mealAllowance', '금액 입력')}
+                          </div>
+                          <div>
+                            <div className="text-[12px] text-[#64748B] mb-1">자가운전</div>
+                            {renderFormattedInput('carAllowance', '금액 입력')}
+                          </div>
+                          <div>
+                            <div className="text-[12px] text-[#64748B] mb-1">자녀공제</div>
+                            {renderFormattedInput('childAllowance', '금액 입력')}
+                          </div>
+                        </>
+                      )}
 
                       {/* 5. 국민연금 */}
                       <div>
