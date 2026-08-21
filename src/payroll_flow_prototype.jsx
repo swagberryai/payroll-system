@@ -6461,12 +6461,24 @@ export default function PayrollFlowPrototype() {
                                       
                                       {/* 성명 */}
                                       <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '40px', minWidth: '70px', width: '70px' }}>
-                                        <span 
-                                          onClick={() => setSelectedEmpProfile(emp)}
-                                          className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
-                                        >
-                                          {emp.name}
-                                        </span>
+                                        <div className="flex flex-col items-center justify-center gap-0.5">
+                                          <span 
+                                            onClick={() => setSelectedEmpProfile(emp)}
+                                            className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                          >
+                                            {emp.name}
+                                          </span>
+                                          {(salaryGroupTab === "아르바이트") && (
+                                            <div className="flex flex-wrap items-center justify-center gap-0.5 mt-0.5">
+                                              {emp.is4MajorInsurance !== false && (
+                                                <span className="px-1 py-[1px] bg-[#E0E7FF] text-[#3730A3] border border-[#C7D2FE] rounded text-[9px] font-black tracking-tighter">4대보험</span>
+                                              )}
+                                              {emp.resignDate && (
+                                                <span className="px-1 py-[1px] bg-rose-50 text-rose-600 border border-rose-200 rounded text-[9px] font-black tracking-tighter">퇴직금</span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
                                       </td>
 
                                       {/* 1일 ~ 말일 근무시간 셀 (스케줄 연동) */}
@@ -6527,12 +6539,19 @@ export default function PayrollFlowPrototype() {
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.rank || emp.position || ""}</td>
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
-                                      <span 
-                                        onClick={() => setSelectedEmpProfile(emp)}
-                                        className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
-                                      >
-                                        {emp.name}
-                                      </span>
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <span 
+                                          onClick={() => setSelectedEmpProfile(emp)}
+                                          className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                        >
+                                          {emp.name}
+                                        </span>
+                                        {emp.resignDate && (
+                                          <div className="flex flex-wrap items-center justify-center gap-0.5 mt-0.5">
+                                            <span className="px-1 py-[1px] bg-rose-50 text-rose-600 border border-rose-200 rounded text-[9px] font-black tracking-tighter">퇴직금</span>
+                                          </div>
+                                        )}
+                                      </div>
                                     </td>
                                     
                                     {(salaryViewMode === "all" || salaryViewMode === "partA") && (
