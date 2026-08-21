@@ -2825,12 +2825,12 @@ export default function PayrollFlowPrototype() {
       </nav>
 
       {/* 3. 메인 콘텐츠 영역 */}
-      <main className={`${(role === "store" && storeTab === "schedule") || (role === "accounting" && (accountingSubtab === "schedule" || accountingSubtab === "salary")) ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
+      <main className={`${(role === "store" && storeTab === "schedule") || role === "accounting" ? "max-w-[1800px] px-4 md:px-6" : "max-w-[1400px] p-6 md:p-8"} mx-auto mt-2 transition-all duration-300`}>
         {role === "accounting" && (
-            <div className="flex flex-wrap gap-3 mb-6 overflow-x-auto scrollbar-hide pb-2">
+            <div className="flex flex-wrap items-center gap-2 md:gap-2.5 mb-6 overflow-x-auto scrollbar-hide pb-1">
               <button
                 onClick={() => setAccountingSubtab("confirm")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "confirm"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2849,7 +2849,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("attendance")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "attendance"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2861,7 +2861,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("schedule")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "schedule"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2873,7 +2873,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("salary")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "salary"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2885,7 +2885,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("employees")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "employees"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2897,7 +2897,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("holidays")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "holidays"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2909,7 +2909,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("labor")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "labor"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
@@ -2928,7 +2928,7 @@ export default function PayrollFlowPrototype() {
 
               <button
                 onClick={() => setAccountingSubtab("stores")}
-                className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-base font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 ${
+                className={`whitespace-nowrap px-3.5 md:px-4 py-2 rounded-xl text-sm md:text-[15px] font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 ${
                   accountingSubtab === "stores"
                     ? "bg-[#EF7D25] text-white shadow-md"
                     : "bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
