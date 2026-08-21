@@ -760,11 +760,26 @@ export default function PayrollFlowPrototype() {
 
   useEffect(() => {
     localStorage.setItem("leave_balances", JSON.stringify(leaveBalances));
-  }, [leaveBalances]); 
+  }, [leaveBalances]);
+
+  // 공휴일/주말 판별 공통 헬퍼 함수
+  const isRed = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr + "T00:00:00");
+    const dow = d.getDay();
+    const isHoliday = (companyHolidays || []).some(h => h.date === dateStr);
+    return dow === 0 || dow === 6 || isHoliday;
+  };
 
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
   const [stores, setStores] = useState([]);
+
+  // 근태/출근 기록 가져오기 공통 헬퍼
+  const getCellData = (empId, date) => {
+    if (!attendance || !attendance.length) return null;
+    return attendance.find(a => String(a.employeeId) === String(empId) && a.date === date) || null;
+  };
   
   const [storeTab, setStoreTab] = useState("attendance");
   const [scheduleGroupTab, setScheduleGroupTab] = useState("정직원"); // 스케줄 현황 서브탭
@@ -6138,23 +6153,52 @@ export default function PayrollFlowPrototype() {
             {/* ---------------- 급여 관리 탭 ---------------- */}
             {accountingSubtab === "salary" && (
               <div className="animate-in fade-in duration-200">
-                <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4">
-                  <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                    <Store className="w-5 h-5 text-[#EF7D25]" />
-                    매장 선택
-                  </h2>
-                  <select
-                    value={currentStoreCode}
-                    onChange={(e) => setCurrentStoreCode(e.target.value)}
-                    className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
-                  >
-                    {storeList.map(s => (
-                      <option key={s.code} value={s.code}>{s.name}</option>
-                    ))}
-                  </select>
-                  <span className="text-sm text-slate-500 font-semibold ml-2">
-                    선택한 매장의 급여 데이터를 열람/수정합니다.
-                  </span>
+                <div className="mb-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <Store className="w-5 h-5 text-[#EF7D25]" />
+                      매장 선택
+                    </h2>
+                    <select
+                      value={currentStoreCode}
+                      onChange={(e) => setCurrentStoreCode(e.target.value)}
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2.5 text-base font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#EF7D25] shadow-xs cursor-pointer min-w-[200px]"
+                    >
+                      {storeList.map(s => (
+                        <option key={s.code} value={s.code}>{s.name}</option>
+                      ))}
+                    </select>
+                    <span className="text-sm text-slate-500 font-semibold ml-2">
+                      선택한 매장의 급여 데이터를 열람/수정합니다.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200 w-max print:hidden">
+                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-[#3D5A80]" />
+                      급여 월 선택
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => {
+                        const [y, m] = salaryBaseDate.split("-").map(Number);
+                        const pm = m === 1 ? 12 : m - 1;
+                        const py = m === 1 ? y - 1 : y;
+                        setSalaryBaseDate(`${py}-${String(pm).padStart(2, "0")}`);
+                      }} className="w-12 h-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-200 hover:bg-slate-100 cursor-pointer font-black text-slate-600 text-xl transition-colors shadow-sm">‹</button>
+                      <span className="text-xl font-black text-slate-900 min-w-[130px] text-center tracking-tight">
+                        {(() => {
+                          const [y, m] = salaryBaseDate.split("-");
+                          return `${y}년 ${parseInt(m, 10)}월`;
+                        })()}
+                      </span>
+                      <button onClick={() => {
+                        const [y, m] = salaryBaseDate.split("-").map(Number);
+                        const nm = m === 12 ? 1 : m + 1;
+                        const ny = m === 12 ? y + 1 : y;
+                        setSalaryBaseDate(`${ny}-${String(nm).padStart(2, "0")}`);
+                      }} className="w-12 h-12 flex items-center justify-center rounded-xl bg-white border-2 border-slate-200 hover:bg-slate-100 cursor-pointer font-black text-slate-600 text-xl transition-colors shadow-sm">›</button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-between items-center mb-6 w-full print:hidden">
@@ -6206,143 +6250,322 @@ export default function PayrollFlowPrototype() {
                 </div>
 
                 
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto w-full pb-10">
-                    <table id="salary-table" className="w-full min-w-max border-collapse text-sm text-center whitespace-nowrap">
-                      <thead>
-                        {/* Header Row 1 */}
-                        <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '50px', width: '50px' }} rowSpan={2}>부서</th>
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직급</th>
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '60px', width: '60px' }} rowSpan={2}>성명</th>
-                          
-                          {(salaryViewMode === "all" || salaryViewMode === "partA") && (
-                            <>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '50px', minWidth: '50px' }} rowSpan={2}>근무일수</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>월정급여</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '65px', minWidth: '65px' }} rowSpan={2}>시급</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>기본급</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '70px', minWidth: '70px' }} rowSpan={2}>식대</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연장수당</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연차수당</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>소계</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>상여금</th>
-                              
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>휴일근로</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>추가휴일연장근로</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2] tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>지각/조퇴/결근/기타</th>
-                            </>
-                          )}
-                          
-                          <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>급여총계</th>
-                          {(salaryViewMode === "all" || salaryViewMode === "partB") && (
-                            <>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-widest" style={{ width: '600px', minWidth: '600px' }} colSpan={9}>공제내역</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>실지급액</th>
-                              
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>특이사항</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>퇴직연금</th>
-                              <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>평균임금</th>
-                              <th className="px-1 py-2 border-slate-300 font-semibold" style={{ width: '80px', minWidth: '80px' }} rowSpan={2}>연봉</th>
-                            </>
-                          )}
-                        </tr>
-                        
-                        {/* Header Row 2 */}
-                        <tr className="bg-[#EFF3F9] text-[#33455E] border-b border-[#D6E0EC] text-[12px] font-medium">
-                          {(salaryViewMode === "all" || salaryViewMode === "partA") && (
-                            <>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
-                            </>
-                          )}
-                          
-                          {(salaryViewMode === "all" || salaryViewMode === "partB") && (
-                            <>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>국민연금</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>건강보험</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>장기요양</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>고용보험</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>연말(지방세)</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>가지급금</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>소득세</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>지방소득세</th>
-                              <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>공제계</th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                                            <tbody>
-                        {employees
-                          .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
-                          .map((emp, index) => (
-                            <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
-                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
-                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
-                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.rank || emp.position || ""}</td>
-                              <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
-                                <span 
-                                  onClick={() => setSelectedEmpProfile(emp)}
-                                  className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
-                                >
-                                  {emp.name}
-                                </span>
-                              </td>
-                              
-                              
-                              
-                              {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                {(() => {
+                  const isParttimePayroll = salaryGroupTab === "아르바이트" || salaryGroupTab === "일용직";
+                  const [sbYear, sbMonth] = (salaryBaseDate || "2026-08").split("-").map(Number);
+                  const sbDaysInMonth = new Date(sbYear, sbMonth, 0).getDate();
+                  const salaryMonthDates = Array.from({ length: sbDaysInMonth }, (_, i) => {
+                    const day = String(i + 1).padStart(2, "0");
+                    return `${salaryBaseDate}-${day}`;
+                  });
+
+                  return (
+                    <>
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto w-full pb-10">
+                        <table id="salary-table" className="w-full min-w-max border-collapse text-sm text-center whitespace-nowrap">
+                          <thead>
+                            {/* Header Row 1 */}
+                            <tr className="bg-[#E9EEF6] text-[#33455E] border-b-[1.5px] border-[#D6E0EC] font-semibold text-[13px]">
+                              {isParttimePayroll ? (
                                 <>
-                                  {renderEditableCell(emp.id, 'workDays')}
-                                  {renderEditableCell(emp.id, 'monthlySalary')}
-                                  {renderEditableCell(emp.id, 'hourlyWage')}
-                                  {renderEditableCell(emp.id, 'basePay')}
-                                  {renderEditableCell(emp.id, 'mealAllowance')}
-                                  {renderEditableCell(emp.id, 'fixedOT')}
-                                  {renderEditableCell(emp.id, 'fixedAnnual')}
-                                  {renderEditableCell(emp.id, 'subtotal', true)}
-                                  {renderEditableCell(emp.id, 'bonus')}
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
+                                  <th className="px-1 py-2 border-r-2 border-[#D6E0EC] font-bold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '70px', width: '70px' }} rowSpan={2}>성명</th>
                                   
-                                  {renderEditableCell(emp.id, 'holidayHours')}
-                                  {renderEditableCell(emp.id, 'holidayPay')}
-                                  {renderEditableCell(emp.id, 'holidayOTHours')}
-                                  {renderEditableCell(emp.id, 'holidayOTPay')}
-                                  {renderEditableCell(emp.id, 'lateHours')}
-                                  {renderEditableCell(emp.id, 'latePay')}
+                                  {/* 1일 ~ 말일 날짜 헤더 */}
+                                  {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                    salaryMonthDates.map(d => {
+                                      const dayNum = parseInt(d.slice(8), 10);
+                                      const red = isRed(d);
+                                      return (
+                                        <th key={d} className={`px-0.5 py-1 border-r border-[#D6E0EC] font-bold text-center text-xs ${red ? "bg-rose-100 text-rose-600" : "bg-[#E9EEF6] text-[#33455E]"}`} style={{ width: '36px', minWidth: '36px' }}>
+                                          {dayNum}
+                                        </th>
+                                      );
+                                    })
+                                  )}
+
+                                  {/* ⏱️ 근무시간 헤더 (5개) */}
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#DCE5F2] text-[#1E293B]" colSpan={5}>근무시간</th>
+
+                                  {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                    <>
+                                      {/* 💰 급여 헤더 (4개) */}
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#E9EEF6] text-[#1E293B]" colSpan={4}>급여</th>
+
+                                      {/* 📉 공제금액 헤더 (8개) */}
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#EFF3F9] text-[#1E293B]" colSpan={8}>공제금액</th>
+
+                                      {/* 💵 차인지급액 헤더 */}
+                                      <th className="px-2 py-2 border-r border-slate-300 font-black bg-[#FEF08A] text-slate-900 text-sm" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>차인지급액</th>
+                                    </>
+                                  )}
                                 </>
-                              )}
-                              
-                              {renderEditableCell(emp.id, 'totalPay', true)}
-                              
-                              {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                              ) : (
                                 <>
-                                  {renderEditableCell(emp.id, 'nationalPension')}
-                                  {renderEditableCell(emp.id, 'healthIns')}
-                                  {renderEditableCell(emp.id, 'longTermCare')}
-                                  {renderEditableCell(emp.id, 'employmentIns')}
-                                  {renderEditableCell(emp.id, 'yearEnd')}
-                                  {renderEditableCell(emp.id, 'advance')}
-                                  {renderEditableCell(emp.id, 'incomeTax')}
-                                  {renderEditableCell(emp.id, 'localTax')}
-                                  {renderEditableCell(emp.id, 'deductionTotal', true)}
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '50px', width: '50px' }} rowSpan={2}>부서</th>
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직급</th>
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '60px', width: '60px' }} rowSpan={2}>성명</th>
                                   
-                                  {renderEditableCell(emp.id, 'netPay', true)}
+                                  {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                    <>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '50px', minWidth: '50px' }} rowSpan={2}>근무일수</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>월정급여</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '65px', minWidth: '65px' }} rowSpan={2}>시급</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>기본급</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '70px', minWidth: '70px' }} rowSpan={2}>식대</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연장수당</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>고정연차수당</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>소계</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>상여금</th>
+                                      
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>휴일근로</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>추가휴일연장근로</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2] tracking-tighter" style={{ width: '120px', minWidth: '120px' }} colSpan={2}>지각/조퇴/결근/기타</th>
+                                    </>
+                                  )}
                                   
-                                  {renderEditableCell(emp.id, 'notes')}
-                                  {renderEditableCell(emp.id, 'retirePension')}
-                                  {renderEditableCell(emp.id, 'avgWage')}
-                                  {renderEditableCell(emp.id, 'annualSalary')}
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>급여총계</th>
+                                  {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                    <>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold tracking-widest" style={{ width: '600px', minWidth: '600px' }} colSpan={9}>공제내역</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold bg-[#DCE5F2]" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>실지급액</th>
+                                      
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '100px', minWidth: '100px' }} rowSpan={2}>특이사항</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>퇴직연금</th>
+                                      <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold" style={{ width: '75px', minWidth: '75px' }} rowSpan={2}>평균임금</th>
+                                      <th className="px-1 py-2 border-slate-300 font-semibold" style={{ width: '80px', minWidth: '80px' }} rowSpan={2}>연봉</th>
+                                    </>
+                                  )}
                                 </>
                               )}
                             </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            
+                            {/* Header Row 2 */}
+                            <tr className="bg-[#EFF3F9] text-[#33455E] border-b border-[#D6E0EC] text-[12px] font-medium">
+                              {isParttimePayroll ? (
+                                <>
+                                  {/* 1일 ~ 말일 요일 이름 */}
+                                  {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                    salaryMonthDates.map(d => {
+                                      const dow = ["일","월","화","수","목","금","토"][new Date(d + "T00:00:00").getDay()];
+                                      const red = isRed(d);
+                                      return (
+                                        <th key={d} className={`px-0.5 py-0.5 border-r border-[#D6E0EC] text-[10px] text-center font-medium ${red ? "bg-rose-50 text-rose-500" : "bg-[#EFF3F9] text-slate-500"}`}>
+                                          {dow}
+                                        </th>
+                                      );
+                                    })
+                                  )}
+
+                                  {/* 근무시간 세부 */}
+                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '42px', minWidth: '42px' }}>일수</th>
+                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>정상</th>
+                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>연장</th>
+                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>휴일</th>
+                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#BCCCDC] text-[11px] font-black" style={{ width: '52px', minWidth: '52px' }}>합계</th>
+
+                                  {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                    <>
+                                      {/* 급여 세부 */}
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '75px', minWidth: '75px' }}>기본급</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '70px', minWidth: '70px' }}>연장수당</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '70px', minWidth: '70px' }}>휴일수당</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-black" style={{ width: '80px', minWidth: '80px' }}>합계</th>
+
+                                      {/* 공제금액 세부 */}
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>국민연금</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>건강보험</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>장기요양</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>고용보험</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>소득세</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>주민세</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] text-[11px] font-bold" style={{ width: '65px', minWidth: '65px' }}>기타공제</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-black" style={{ width: '75px', minWidth: '75px' }}>공제계</th>
+                                    </>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                    <>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '50px', minWidth: '50px' }}>시간</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2]" style={{ width: '70px', minWidth: '70px' }}>수당</th>
+                                    </>
+                                  )}
+                                  
+                                  {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                    <>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>국민연금</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>건강보험</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>장기요양</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>고용보험</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>연말(지방세)</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>가지급금</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>소득세</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] tracking-tighter" style={{ width: '70px', minWidth: '70px' }}>지방소득세</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC]" style={{ width: '65px', minWidth: '65px' }}>공제계</th>
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {employees
+                              .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
+                              .map((emp, index) => {
+                                if (isParttimePayroll) {
+                                  let workDaysCount = 0;
+                                  let normalHoursSum = 0;
+                                  let holidayHoursSum = 0;
+
+                                  salaryMonthDates.forEach(d => {
+                                    const rec = getCellData(emp.id, d);
+                                    const hrs = parseFloat(rec?.hours) || 0;
+                                    if (hrs > 0) {
+                                      workDaysCount++;
+                                      if (isRed(d)) {
+                                        holidayHoursSum += hrs;
+                                      } else {
+                                        normalHoursSum += hrs;
+                                      }
+                                    }
+                                  });
+                                  const totalHoursSum = normalHoursSum + holidayHoursSum;
+
+                                  return (
+                                    <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
+                                      {/* NO */}
+                                      <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
+                                      
+                                      {/* 성명 */}
+                                      <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '40px', minWidth: '70px', width: '70px' }}>
+                                        <span 
+                                          onClick={() => setSelectedEmpProfile(emp)}
+                                          className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                        >
+                                          {emp.name}
+                                        </span>
+                                      </td>
+
+                                      {/* 1일 ~ 말일 근무시간 셀 (스케줄 연동) */}
+                                      {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                        salaryMonthDates.map(d => {
+                                          const rec = getCellData(emp.id, d);
+                                          const hrs = rec?.hours || "";
+                                          const red = isRed(d);
+                                          return (
+                                            <td key={d} className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold ${red ? "bg-rose-50/40 text-rose-700" : "text-slate-800"}`}>
+                                              {hrs}
+                                            </td>
+                                          );
+                                        })
+                                      )}
+
+                                      {/* ⏱️ 근무시간 세부 셀 */}
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-emerald-800 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
+                                      {renderEditableCell(emp.id, 'otHours')}
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#F1F5F9] font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalHoursSum > 0 ? totalHoursSum : "-"}</td>
+
+                                      {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                        <>
+                                          {/* 💰 급여 세부 셀 */}
+                                          {renderEditableCell(emp.id, 'basePay')}
+                                          {renderEditableCell(emp.id, 'otPay')}
+                                          {renderEditableCell(emp.id, 'holidayPay')}
+                                          {renderEditableCell(emp.id, 'grossPay', true)}
+
+                                          {/* 📉 공제금액 세부 셀 */}
+                                          {renderEditableCell(emp.id, 'nationalPension')}
+                                          {renderEditableCell(emp.id, 'healthIns')}
+                                          {renderEditableCell(emp.id, 'longTermCare')}
+                                          {renderEditableCell(emp.id, 'employmentIns')}
+                                          {renderEditableCell(emp.id, 'incomeTax')}
+                                          {renderEditableCell(emp.id, 'localTax')}
+                                          {renderEditableCell(emp.id, 'otherDeduction')}
+                                          {renderEditableCell(emp.id, 'deductionTotal', true)}
+
+                                          {/* 💵 차인지급액 */}
+                                          {renderEditableCell(emp.id, 'netPay', true)}
+                                        </>
+                                      )}
+                                    </tr>
+                                  );
+                                }
+
+                                return (
+                                  <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
+                                    <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
+                                    <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
+                                    <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.rank || emp.position || ""}</td>
+                                    <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
+                                      <span 
+                                        onClick={() => setSelectedEmpProfile(emp)}
+                                        className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                      >
+                                        {emp.name}
+                                      </span>
+                                    </td>
+                                    
+                                    {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                      <>
+                                        {renderEditableCell(emp.id, 'workDays')}
+                                        {renderEditableCell(emp.id, 'monthlySalary')}
+                                        {renderEditableCell(emp.id, 'hourlyWage')}
+                                        {renderEditableCell(emp.id, 'basePay')}
+                                        {renderEditableCell(emp.id, 'mealAllowance')}
+                                        {renderEditableCell(emp.id, 'fixedOT')}
+                                        {renderEditableCell(emp.id, 'fixedAnnual')}
+                                        {renderEditableCell(emp.id, 'subtotal', true)}
+                                        {renderEditableCell(emp.id, 'bonus')}
+                                        
+                                        {renderEditableCell(emp.id, 'holidayHours')}
+                                        {renderEditableCell(emp.id, 'holidayPay')}
+                                        {renderEditableCell(emp.id, 'holidayOTHours')}
+                                        {renderEditableCell(emp.id, 'holidayOTPay')}
+                                        {renderEditableCell(emp.id, 'lateHours')}
+                                        {renderEditableCell(emp.id, 'latePay')}
+                                      </>
+                                    )}
+                                    
+                                    {renderEditableCell(emp.id, 'totalPay', true)}
+                                    
+                                    {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                      <>
+                                        {renderEditableCell(emp.id, 'nationalPension')}
+                                        {renderEditableCell(emp.id, 'healthIns')}
+                                        {renderEditableCell(emp.id, 'longTermCare')}
+                                        {renderEditableCell(emp.id, 'employmentIns')}
+                                        {renderEditableCell(emp.id, 'yearEnd')}
+                                        {renderEditableCell(emp.id, 'advance')}
+                                        {renderEditableCell(emp.id, 'incomeTax')}
+                                        {renderEditableCell(emp.id, 'localTax')}
+                                        {renderEditableCell(emp.id, 'deductionTotal', true)}
+                                        
+                                        {renderEditableCell(emp.id, 'netPay', true)}
+                                        
+                                        {renderEditableCell(emp.id, 'notes')}
+                                        {renderEditableCell(emp.id, 'retirePension')}
+                                        {renderEditableCell(emp.id, 'avgWage')}
+                                        {renderEditableCell(emp.id, 'annualSalary')}
+                                      </>
+                                    )}
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  );
+                })()}
                   
                   {/* 급여 설정 (규칙) 편집기 */}
                   {showRuleEditor && (
