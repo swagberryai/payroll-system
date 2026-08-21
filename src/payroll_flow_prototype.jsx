@@ -6265,7 +6265,7 @@ export default function PayrollFlowPrototype() {
                               {isParttimePayroll ? (
                                 <>
                                   <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
-                                  <th className="px-1 py-2 border-r-2 border-[#D6E0EC] font-bold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '70px', width: '70px' }} rowSpan={2}>성명</th>
+                                  <th className="px-1 py-2 border-r-2 border-[#D6E0EC] font-bold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '90px', width: '90px' }} rowSpan={2}>성명</th>
                                   
                                   {/* 1일 ~ 말일 날짜 헤더 */}
                                   {(salaryViewMode === "all" || salaryViewMode === "partA") && (
@@ -6301,7 +6301,7 @@ export default function PayrollFlowPrototype() {
                                   <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: 0, minWidth: '40px', width: '40px' }} rowSpan={2}>NO</th>
                                   <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '40px', minWidth: '50px', width: '50px' }} rowSpan={2}>부서</th>
                                   <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '90px', minWidth: '50px', width: '50px' }} rowSpan={2}>직급</th>
-                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '60px', width: '60px' }} rowSpan={2}>성명</th>
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-semibold sticky z-20 bg-[#E9EEF6]" style={{ left: '140px', minWidth: '80px', width: '80px' }} rowSpan={2}>성명</th>
                                   
                                   {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                                     <>
@@ -6453,6 +6453,9 @@ export default function PayrollFlowPrototype() {
                                     }
                                   });
                                   const totalHoursSum = normalHoursSum + otHoursSum + holidayHoursSum;
+                                  
+                                  const socialConfig = currentStoreObj?.rules?.socialInsurance || { targetHours: 60, targetDays: 8 };
+                                  const is4MajorEligible = emp.is4MajorInsurance === true || (totalHoursSum >= socialConfig.targetHours || workDaysCount >= socialConfig.targetDays);
 
                                   return (
                                     <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
@@ -6460,21 +6463,22 @@ export default function PayrollFlowPrototype() {
                                       <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
                                       
                                       {/* 성명 */}
-                                      <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '40px', minWidth: '70px', width: '70px' }}>
-                                        <div className="flex flex-col items-center justify-center gap-0.5">
+                                      <td className="px-1 py-2 border-b border-[#D6E0EC] sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '40px', minWidth: '90px', width: '90px' }}>
+                                        <div className="flex items-center justify-between px-1">
                                           <span 
                                             onClick={() => setSelectedEmpProfile(emp)}
-                                            className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                            className={`cursor-pointer hover:underline transition-colors truncate ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                            title={emp.name}
                                           >
                                             {emp.name}
                                           </span>
                                           {(salaryGroupTab === "아르바이트") && (
-                                            <div className="flex flex-wrap items-center justify-center gap-0.5 mt-0.5">
-                                              {emp.is4MajorInsurance !== false && (
-                                                <span className="px-1 py-[1px] bg-[#E0E7FF] text-[#3730A3] border border-[#C7D2FE] rounded text-[9px] font-black tracking-tighter">4대보험</span>
+                                            <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                                              {is4MajorEligible && (
+                                                <span className="w-4 h-4 flex items-center justify-center bg-[#E0E7FF] text-[#3730A3] border border-[#C7D2FE] rounded text-[10px] font-black" title="4대보험 대상자">4</span>
                                               )}
                                               {emp.resignDate && (
-                                                <span className="px-1 py-[1px] bg-rose-50 text-rose-600 border border-rose-200 rounded text-[9px] font-black tracking-tighter">퇴직금</span>
+                                                <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black" title="퇴직금 대상자">퇴</span>
                                               )}
                                             </div>
                                           )}
@@ -6538,17 +6542,18 @@ export default function PayrollFlowPrototype() {
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '40px', minWidth: '50px', width: '50px' }}>{emp.department || ""}</td>
                                     <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: '90px', minWidth: '50px', width: '50px' }}>{emp.rank || emp.position || ""}</td>
-                                    <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '60px', width: '60px' }}>
-                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <td className="px-1 py-2 border-b border-[#D6E0EC] sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '140px', minWidth: '80px', width: '80px' }}>
+                                      <div className="flex items-center justify-between px-1">
                                         <span 
                                           onClick={() => setSelectedEmpProfile(emp)}
-                                          className={`cursor-pointer hover:underline transition-colors ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                          className={`cursor-pointer hover:underline transition-colors truncate ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                          title={emp.name}
                                         >
                                           {emp.name}
                                         </span>
                                         {emp.resignDate && (
-                                          <div className="flex flex-wrap items-center justify-center gap-0.5 mt-0.5">
-                                            <span className="px-1 py-[1px] bg-rose-50 text-rose-600 border border-rose-200 rounded text-[9px] font-black tracking-tighter">퇴직금</span>
+                                          <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                                            <span className="w-4 h-4 flex items-center justify-center bg-rose-50 text-rose-600 border border-rose-200 rounded text-[10px] font-black" title="퇴직금 대상자">퇴</span>
                                           </div>
                                         )}
                                       </div>
@@ -7115,6 +7120,28 @@ export default function PayrollFlowPrototype() {
                         </select>
                       ) : (
                         <div className="text-[14px] font-semibold text-[#1E293B]">{profileEditForm.employmentType || "-"}</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-[12px] text-[#64748B] mb-1">4대보험 가입 대상</div>
+                      {profileEditMode ? (
+                        <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={profileEditForm.is4MajorInsurance === true}
+                            onChange={(e) => handleProfileFormChange('is4MajorInsurance', e.target.checked)}
+                            className="w-4 h-4 text-[#FD7B37] rounded focus:ring-[#FD7B37] border-slate-300"
+                          />
+                          <span className="text-[14px] font-semibold text-[#1E293B]">가입 대상자</span>
+                        </label>
+                      ) : (
+                        <div className="text-[14px] font-semibold text-[#1E293B]">
+                          {profileEditForm.is4MajorInsurance === true ? (
+                            <span className="text-blue-600">✅ 대상자</span>
+                          ) : (
+                            <span className="text-slate-400">- 비대상</span>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div>
