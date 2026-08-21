@@ -6506,7 +6506,7 @@ export default function PayrollFlowPrototype() {
 
                                       {/* ⏱️ 근무시간 세부 셀 */}
                                       <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-emerald-800 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
                                       <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-amber-700 text-xs text-center">{otHoursSum > 0 ? otHoursSum : "-"}</td>
                                       <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : "-"}</td>
                                       <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalHoursSum > 0 ? totalHoursSum : "-"}</td>
