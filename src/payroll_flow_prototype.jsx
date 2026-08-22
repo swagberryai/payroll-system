@@ -5,6 +5,7 @@ import {
   CheckCircle2, Circle, AlertTriangle, Clock, ImagePlus, Check, X, Users, RefreshCw, Download, ArrowRight, ShieldAlert, Edit3, Trash2, Key, UserCheck, PlusCircle, ShieldCheck, MapPin, Phone, FileText, LayoutDashboard, DollarSign, AlertCircle, FileCheck, Calendar, ArrowRightCircle, Trash, Save, Sliders, HelpCircle, ChevronRight, LogOut, FilePlus, UserX, Printer, Calculator
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
+import { calculatePartTimePayroll } from "./partTimePayrollCalculator";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
 const ATTEND_TYPES = ["정상근무", "연차", "반차", "조퇴", "결근", "휴일근무", "기타"];
@@ -6482,71 +6483,26 @@ export default function PayrollFlowPrototype() {
                               .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
                               .map((emp, index) => {
                                 if (isParttimePayroll) {
-                                  let workDaysCount = 0;
-                                  let normalHoursSum = 0;
-                                  let otHoursSum = 0;
-                                  let holidayHoursSum = 0;
-
-                                  salaryMonthDates.forEach(d => {
-                                    const rec = getCellData(emp.id, d);
-                                    const hrs = parseFloat(rec?.hours) || 0;
-                                    if (hrs > 0) {
-                                      workDaysCount++;
-                                      const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
-                                      
-                                      let dailyNormal = 0;
-                                      let dailyOt = 0;
-                                      let dailyHoliday = 0;
-
-                                      if (hrs > 10) {
-                                        dailyOt = hrs - 10;
-                                        if (isCompanyHoliday) {
-                                          dailyHoliday = 10;
-                                        } else {
-                                          dailyNormal = 10;
-                                        }
-                                      } else {
-                                        if (isCompanyHoliday) {
-                                          dailyHoliday = hrs;
-                                        } else {
-                                          dailyNormal = hrs;
-                                        }
-                                      }
-
-                                      normalHoursSum += dailyNormal;
-                                      otHoursSum += dailyOt;
-                                      holidayHoursSum += dailyHoliday;
-                                    }
-                                  });
-                                  const totalHoursSum = normalHoursSum + otHoursSum + holidayHoursSum;
-                                  
-                                  const socialConfig = currentStoreObj?.rules?.socialInsurance || { targetHours: 60, targetDays: 8 };
-                                  const is4MajorEligible = emp.is4MajorInsurance === true || (totalHoursSum >= socialConfig.targetHours || workDaysCount >= socialConfig.targetDays);
-
-                                  // -----------------------------------------
-                                  // 자동 계산 로직 (아르바이트/일용직)
-                                  // -----------------------------------------
-                                  const hourlyWage = Number(emp.hourlyWage) || 10030; // 기본 최저시급 대체
-                                  
-                                  // 급여 계산 (사용자 요청 수식 반영)
-                                  const calcBasePay = normalHoursSum * hourlyWage;
-                                  const calcOtPay = Math.round(otHoursSum * hourlyWage * 1.5);
-                                  const calcHolidayPay = Math.round(holidayHoursSum * hourlyWage * 1.5);
-                                  const calcGrossPay = calcBasePay + calcOtPay + calcHolidayPay;
-
-                                  // 공제액 계산 (10원 단위 절사)
-                                  const calcNationalPension = emp.nationalPension === '60세 이상 미가입' ? '60세' : (Number(emp.nationalPension) || 0);
-                                  const calcNationalPensionNum = isNaN(Number(calcNationalPension)) ? 0 : Number(calcNationalPension);
-                                  const calcHealthIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.03595 / 10) * 10 : 0;
-                                  const calcLongTermCare = is4MajorEligible ? Math.floor(calcHealthIns * 0.1314 / 10) * 10 : 0;
-                                  const calcEmploymentIns = is4MajorEligible ? Math.floor(calcGrossPay * 0.009 / 10) * 10 : 0;
-                                  const calcIncomeTax = Number(emp.incomeTax) || 0;
-                                  const calcLocalTax = Number(emp.localTax) || 0;
-                                  const calcOtherDeduction = Number(getPayrollCell(emp.id, 'otherDeduction')) || 0;
-
-                                  const calcDeductionTotal = calcNationalPensionNum + calcHealthIns + calcLongTermCare + calcEmploymentIns + calcIncomeTax + calcLocalTax + calcOtherDeduction;
-
-                                  const calcNetPay = calcGrossPay - calcDeductionTotal;
+                                  const {
+                                    workDaysCount,
+                                    normalHoursSum,
+                                    otHoursSum,
+                                    holidayHoursSum,
+                                    totalHoursSum,
+                                    is4MajorEligible,
+                                    calcBasePay,
+                                    calcOtPay,
+                                    calcHolidayPay,
+                                    calcGrossPay,
+                                    calcNationalPension,
+                                    calcHealthIns,
+                                    calcLongTermCare,
+                                    calcEmploymentIns,
+                                    calcIncomeTax,
+                                    calcLocalTax,
+                                    calcDeductionTotal,
+                                    calcNetPay,
+                                  } = calculatePartTimePayroll(emp, { salaryMonthDates, getCellData, companyHolidays, currentStoreObj, getPayrollCell });
 
                                   return (
                                     <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
