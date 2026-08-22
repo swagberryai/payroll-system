@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as firebaseService from "../firebaseService";
 import { calculatePartTimePayroll } from "./partTimePayrollCalculator";
+import { calculateDailyPayroll } from "./dailyPayrollCalculator";
 
 const EMPLOYMENT_TYPES = ["정직원", "아르바이트", "일용직"];
 const ATTEND_TYPES = ["정상근무", "연차", "반차", "조퇴", "결근", "휴일근무", "기타"];
@@ -572,15 +573,16 @@ function ParttimeCellEditor({ empId, empName, date, storeCode, existHours, onClo
 
 
 // 정직원 셀 편집 팝오버 컴포넌트 (포커스 유지 및 리렌더링 방지를 위해 외부 분리)
-function CellEditor({ empId, date, existType, existRemark, handleCellSave, onClose, isBottomRow }) {
+function CellEditor({ empId, date, existType, existRemark, handleCellSave, onClose, isBottomRow, types }) {
   const [selType, setSelType] = React.useState(existType || "");
   const [remark, setRemark] = React.useState(existRemark || "");
+  const typeOptions = types || ["정상출근", "지각", "조퇴", "휴무", "연차", "반차", "결근"];
 
   return (
     <div className={`absolute z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-3 w-48 ${isBottomRow ? "bottom-full mb-1" : "top-full mt-1"} left-1/2 -translate-x-1/2`} onClick={e => e.stopPropagation()}>
       <p className="text-xs font-black text-slate-800 mb-2">{date.slice(5)} 근태</p>
       <div className="grid grid-cols-2 gap-1.5 mb-3">
-        {["정상출근", "지각", "조퇴", "휴무", "연차", "반차", "결근"].map(t => (
+        {typeOptions.map(t => (
           <button
             key={t}
             onClick={() => setSelType(t)}
@@ -642,6 +644,7 @@ export default function PayrollFlowPrototype() {
   const [payrollData, setPayrollData] = useState([]);
   const [salaryRules, setSalaryRules] = useState(DEFAULT_SALARY_RULES);
   const [showRuleEditor, setShowRuleEditor] = useState(false);
+  const [salaryCellEdit, setSalaryCellEdit] = useState(null); // { empId, date } — 급여대장에서 근무시간 직접 수정 (아르바이트)
   const [hrSubtab, setHrSubtab] = useState("confirm");
 
   // 직원 관리 탭 관련 State
@@ -1397,10 +1400,10 @@ export default function PayrollFlowPrototype() {
           date: attGlobalDate,
           type: "정상출근",
           mode: attTimeMode,
-          start: "09:00",
-          end: "18:00",
-          hours: attTimeMode === "start-only" ? 10 : 8,
-          breakMinutes: 0,
+          start: "10:00",
+          end: "22:00",
+          hours: attTimeMode === "start-only" ? 10 : 10,
+          breakMinutes: 120,
         });
         count++;
       }
@@ -1467,10 +1470,10 @@ export default function PayrollFlowPrototype() {
             date: attGlobalDate,
             type: "정상출근",
             mode: attTimeMode,
-            start: "09:00",
-            end: "18:00",
-            hours: attTimeMode === "start-only" ? 10 : 8,
-            breakMinutes: 0,
+            start: "10:00",
+            end: "22:00",
+            hours: attTimeMode === "start-only" ? 10 : 10,
+            breakMinutes: 120,
           });
           count++;
         }
@@ -2744,6 +2747,47 @@ export default function PayrollFlowPrototype() {
     return pData?.data?._overrides?.[fieldName] || false;
   };
 
+  // 스케줄 탭 및 급여대장(일용직 출근/결근 토글)에서 공용으로 쓰는 근태 저장 함수
+  async function handleCellSave(empId, date, type, startTime, endTime, remark = "") {
+    setScheduleCellEdit(null);
+    const emp = employees.find(e => e.id === empId);
+    const isDaily = emp?.employmentType === "일용직";
+
+    let start = startTime || "";
+    let end = endTime || "";
+    let extra = {};
+
+    // 일용직은 항상 10:00~22:00/휴식120분/실근로10시간 고정 (정직원과 동일), 결근이면 0시간
+    if (isDaily) {
+      if (type === "정상출근") {
+        start = "10:00";
+        end = "22:00";
+        extra = { hours: 10, breakMinutes: 120 };
+      } else if (type === "결근") {
+        extra = { hours: 0 };
+      }
+    }
+
+    const rec = {
+      employeeId: empId,
+      date,
+      type,
+      attendanceType: type,
+      startTime: start,
+      endTime: end,
+      start,
+      end,
+      mode: "start-end",
+      remark,
+      ...extra,
+    };
+    try {
+      await firebaseService.submitAttendance(rec, currentStoreCode);
+    } catch (e) {
+      console.error("Schedule save error:", e);
+    }
+  }
+
   const calculateCell = (empId, fieldName) => {
     // 수동 오버라이드가 있으면 해당 값을 반환
     if (getPayrollOverride(empId, fieldName)) {
@@ -3476,27 +3520,6 @@ export default function PayrollFlowPrototype() {
               }
 
               // 셀 저장
-              async function handleCellSave(empId, date, type, startTime, endTime, remark = "") {
-                setScheduleCellEdit(null);
-                const rec = {
-                  employeeId: empId,
-                  date,
-                  type,
-                  attendanceType: type,
-                  startTime: startTime || "",
-                  endTime: endTime || "",
-                  start: startTime || "",
-                  end: endTime || "",
-                  mode: "start-end",
-                  remark: remark,
-                };
-                try {
-                  await firebaseService.submitAttendance(rec, currentStoreCode);
-                } catch (e) {
-                  console.error("Schedule save error:", e);
-                }
-              }
-
               // 프린트 스타일
               const printStyle = `
                 @media print {
@@ -3688,6 +3711,7 @@ export default function PayrollFlowPrototype() {
                   {/* 정직원 / 아르바이트 / 일용직 그리드 */}
                   {(scheduleGroupTab === "정직원" || scheduleGroupTab === "아르바이트" || scheduleGroupTab === "일용직") && (() => {
                     const isParttimeMode = scheduleGroupTab === "아르바이트" || scheduleGroupTab === "일용직";
+                    const isDailyMode = scheduleGroupTab === "일용직";
                     const targetEmps = scheduleGroupTab === "정직원" ? fullTimeEmps : scheduleGroupTab === "아르바이트" ? parttimeEmps : dailyEmps;
                     return (
                     <div id="schedule-print-area">
@@ -3796,7 +3820,7 @@ export default function PayrollFlowPrototype() {
                                             }}
                                           >
                                             <div className="h-[40px] flex items-center justify-center px-0.5 py-1 overflow-hidden">
-                                              {isParttimeMode ? (
+                                              {isParttimeMode && !isDailyMode ? (
                                                 <span className="text-xs font-extrabold text-slate-700">{rec?.hours || ""}</span>
                                               ) : cellInfo ? (
                                                 <span className={`px-1 py-0.5 rounded text-xs font-extrabold leading-tight whitespace-nowrap overflow-hidden text-ellipsis max-w-full ${cellInfo.color}`}>
@@ -3807,25 +3831,26 @@ export default function PayrollFlowPrototype() {
                                               )}
                                             </div>
                                             {isEditing && !scheduleEmpModal && (
-                                              isParttimeMode ? (
-                                                <ParttimeCellEditor 
-                                                  empId={emp.id} 
+                                              isParttimeMode && !isDailyMode ? (
+                                                <ParttimeCellEditor
+                                                  empId={emp.id}
                                                   empName={emp.name}
                                                   date={d}
                                                   storeCode={currentStoreCode}
                                                   existHours={rec?.hours || ""}
                                                   isBottomRow={targetEmps.indexOf(emp) > targetEmps.length - 3}
-                                                  onClose={() => setScheduleCellEdit(null)} 
+                                                  onClose={() => setScheduleCellEdit(null)}
                                                 />
                                               ) : (
-                                                <CellEditor 
-                                                  empId={emp.id} 
+                                                <CellEditor
+                                                  empId={emp.id}
                                                   date={d}
                                                   existType={rec ? (rec.type || rec.attendanceType) : ""}
                                                   existRemark={rec?.remark || ""}
                                                   handleCellSave={handleCellSave}
                                                   isBottomRow={targetEmps.indexOf(emp) > targetEmps.length - 3}
-                                                  onClose={() => setScheduleCellEdit(null)} 
+                                                  onClose={() => setScheduleCellEdit(null)}
+                                                  types={isDailyMode ? ["정상출근", "결근"] : undefined}
                                                 />
                                               )
                                             )}
@@ -4034,7 +4059,7 @@ export default function PayrollFlowPrototype() {
                                           {hn && <div className="text-[9px] leading-tight truncate">{hn}</div>}
                                         </div>
                                         <div className="h-7 flex items-center justify-center">
-                                          {isParttimeMode ? (
+                                          {isParttimeMode && !isDailyMode ? (
                                             <span className="text-lg font-extrabold text-slate-700">{rec?.hours || ""}</span>
                                           ) : cellInfo ? (
                                             <span className={`text-sm font-black px-2 py-1 rounded-lg ${cellInfo.color}`}>
@@ -4045,25 +4070,26 @@ export default function PayrollFlowPrototype() {
                                           )}
                                         </div>
                                         {scheduleCellEdit?.empId === emp.id && scheduleCellEdit?.date === d && (
-                                          isParttimeMode ? (
-                                            <ParttimeCellEditor 
-                                              empId={emp.id} 
+                                          isParttimeMode && !isDailyMode ? (
+                                            <ParttimeCellEditor
+                                              empId={emp.id}
                                               empName={emp.name}
                                               date={d}
                                               storeCode={currentStoreCode}
                                               existHours={rec?.hours || ""}
                                               isBottomRow={isBottomRow}
-                                              onClose={() => setScheduleCellEdit(null)} 
+                                              onClose={() => setScheduleCellEdit(null)}
                                             />
                                           ) : (
-                                            <CellEditor 
-                                              empId={emp.id} 
-                                              date={d} 
+                                            <CellEditor
+                                              empId={emp.id}
+                                              date={d}
                                               existType={rec ? (rec.type || rec.attendanceType) : ""}
                                               existRemark={rec?.remark || ""}
                                               handleCellSave={handleCellSave}
-                                              isBottomRow={isBottomRow} 
-                                              onClose={() => setScheduleCellEdit(null)} 
+                                              isBottomRow={isBottomRow}
+                                              onClose={() => setScheduleCellEdit(null)}
+                                              types={isDailyMode ? ["정상출근", "결근"] : undefined}
                                             />
                                           )
                                         )}
@@ -6311,6 +6337,7 @@ export default function PayrollFlowPrototype() {
                 
                 {(() => {
                   const isParttimePayroll = salaryGroupTab === "아르바이트" || salaryGroupTab === "일용직";
+                  const isDailyPayroll = salaryGroupTab === "일용직";
                   const [sbYear, sbMonth] = (salaryBaseDate || "2026-08").split("-").map(Number);
                   const sbDaysInMonth = new Date(sbYear, sbMonth, 0).getDate();
                   const salaryMonthDates = Array.from({ length: sbDaysInMonth }, (_, i) => {
@@ -6348,7 +6375,7 @@ export default function PayrollFlowPrototype() {
                                   )}
 
                                   {/* ⏱️ 근무시간 헤더 (5개) */}
-                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#DCE5F2] text-[#1E293B]" colSpan={5}>근무시간</th>
+                                  <th className="px-1 py-2 border-r border-[#D6E0EC] font-bold bg-[#DCE5F2] text-[#1E293B]" colSpan={isDailyPayroll ? 4 : 5}>근무시간</th>
 
                                   {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                                     <>
@@ -6422,11 +6449,22 @@ export default function PayrollFlowPrototype() {
                                   )}
 
                                   {/* 근무시간 세부 */}
-                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '42px', minWidth: '42px' }}>일수</th>
-                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>정상</th>
-                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>연장</th>
-                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>휴일</th>
-                                  <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#BCCCDC] text-[11px] font-black" style={{ width: '52px', minWidth: '52px' }}>합계</th>
+                                  {isDailyPayroll ? (
+                                    <>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>평일</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '52px', minWidth: '52px' }}>공휴일</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#BCCCDC] text-[11px] font-black" style={{ width: '52px', minWidth: '52px' }}>합계</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#BCCCDC] text-[11px] font-black" style={{ width: '80px', minWidth: '80px' }}>지급액</th>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '42px', minWidth: '42px' }}>일수</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>정상</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>연장</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#DCE5F2] text-[11px] font-bold" style={{ width: '48px', minWidth: '48px' }}>휴일</th>
+                                      <th className="px-1 py-1 border-r border-[#D6E0EC] bg-[#BCCCDC] text-[11px] font-black" style={{ width: '52px', minWidth: '52px' }}>합계</th>
+                                    </>
+                                  )}
 
                                   {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                                     <>
@@ -6482,6 +6520,79 @@ export default function PayrollFlowPrototype() {
                             {employees
                               .filter(e => e.employmentType === salaryGroupTab && isMatchStore(e.storeCode, currentStoreObj))
                               .map((emp, index) => {
+                                if (isDailyPayroll) {
+                                  const { weekdayDaysCount, holidayDaysCount, totalDaysCount, estimatedPay } = calculateDailyPayroll(emp, { salaryMonthDates, getCellData, isRed });
+                                  const renderManualCell = (fieldName) => renderEditableCell(emp.id, fieldName, false, getPayrollCell(emp.id, fieldName) || "");
+
+                                  return (
+                                    <tr key={emp.id} className="border-b border-[#EEF1F6] hover:bg-slate-50 transition-colors even:bg-[#F7F9FC] bg-white text-[13px] font-normal">
+                                      {/* NO */}
+                                      <td className="px-1 py-2 border-b border-[#D6E0EC] text-center sticky z-10 bg-inherit" style={{ left: 0, minWidth: '40px', width: '40px' }}>{index + 1}</td>
+
+                                      {/* 성명 */}
+                                      <td className="px-1 py-2 border-b border-[#D6E0EC] sticky z-10 bg-inherit border-r-2 border-r-[#D6E0EC]" style={{ left: '40px', minWidth: '90px', width: '90px' }}>
+                                        <div className="flex items-center justify-between px-1">
+                                          <span
+                                            onClick={() => setSelectedEmpProfile(emp)}
+                                            className={`cursor-pointer hover:underline transition-colors truncate ${emp.resignDate ? "text-rose-500 font-semibold" : "font-semibold text-[#33455E]"}`}
+                                            title={emp.name}
+                                          >
+                                            {emp.name}
+                                          </span>
+                                        </div>
+                                      </td>
+
+                                      {/* 1일 ~ 말일 출근 체크 셀 (클릭해서 출근/결근 토글, 급여대장에서도 수정 가능) */}
+                                      {(salaryViewMode === "all" || salaryViewMode === "partA") && (
+                                        salaryMonthDates.map(d => {
+                                          const rec = getCellData(emp.id, d);
+                                          const attended = (parseFloat(rec?.hours) || 0) > 0;
+                                          const isRedDay = isRed(d);
+
+                                          return (
+                                            <td
+                                              key={d}
+                                              onClick={() => handleCellSave(emp.id, d, attended ? "결근" : "정상출근")}
+                                              title="클릭해서 출근/결근 전환"
+                                              className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold cursor-pointer hover:bg-orange-50 transition-colors ${isRedDay ? "bg-rose-50/40 text-rose-700" : "text-slate-800"}`}
+                                            >
+                                              {attended ? "1" : ""}
+                                            </td>
+                                          );
+                                        })
+                                      )}
+
+                                      {/* 근무일수 세부 셀 (평일/공휴일/합계/지급액) */}
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{weekdayDaysCount > 0 ? weekdayDaysCount : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-rose-700 text-xs text-center">{holidayDaysCount > 0 ? holidayDaysCount : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalDaysCount > 0 ? totalDaysCount : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{estimatedPay > 0 ? estimatedPay.toLocaleString() : ""}</td>
+
+                                      {(salaryViewMode === "all" || salaryViewMode === "partB") && (
+                                        <>
+                                          {/* 💰 급여~공제 전부 수기입력 (계산식 설정과 무관) */}
+                                          {renderManualCell('basePay')}
+                                          {renderManualCell('otPay')}
+                                          {renderManualCell('holidayPay')}
+                                          {renderManualCell('grossPay')}
+
+                                          {renderManualCell('nationalPension')}
+                                          {renderManualCell('healthIns')}
+                                          {renderManualCell('longTermCare')}
+                                          {renderManualCell('employmentIns')}
+                                          {renderManualCell('incomeTax')}
+                                          {renderManualCell('localTax')}
+                                          {renderManualCell('otherDeduction')}
+                                          {renderManualCell('deductionTotal')}
+
+                                          {/* 💵 차인지급액 */}
+                                          {renderManualCell('netPay')}
+                                        </>
+                                      )}
+                                    </tr>
+                                  );
+                                }
+
                                 if (isParttimePayroll) {
                                   const {
                                     workDaysCount,
@@ -6532,31 +6643,46 @@ export default function PayrollFlowPrototype() {
                                         </div>
                                       </td>
 
-                                      {/* 1일 ~ 말일 근무시간 셀 (스케줄 연동) */}
+                                      {/* 1일 ~ 말일 근무시간 셀 (스케줄/근태관리와 연동, 클릭해서 직접 수정 가능) */}
                                       {(salaryViewMode === "all" || salaryViewMode === "partA") && (
                                         salaryMonthDates.map(d => {
                                           const rec = getCellData(emp.id, d);
                                           const hrs = rec?.hours || "";
                                           const isRedDay = isRed(d);
                                           const isCompanyHoliday = (companyHolidays || []).some(h => h.date === d);
-                                          
+                                          const isEditingCell = salaryCellEdit?.empId === emp.id && salaryCellEdit?.date === d;
+
                                           const bgColor = isRedDay ? "bg-rose-50/40" : "";
                                           const textColor = isCompanyHoliday ? "text-rose-700" : "text-slate-800";
-                                          
+
                                           return (
-                                            <td key={d} className={`px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold ${bgColor} ${textColor}`}>
+                                            <td
+                                              key={d}
+                                              onClick={() => setSalaryCellEdit(isEditingCell ? null : { empId: emp.id, date: d })}
+                                              className={`relative px-0.5 py-1.5 border-r border-[#D6E0EC] text-center text-xs font-extrabold cursor-pointer hover:bg-orange-50 transition-colors ${bgColor} ${textColor}`}
+                                            >
                                               {hrs}
+                                              {isEditingCell && (
+                                                <ParttimeCellEditor
+                                                  empId={emp.id}
+                                                  empName={emp.name}
+                                                  date={d}
+                                                  storeCode={currentStoreCode}
+                                                  existHours={rec?.hours || ""}
+                                                  onClose={() => setSalaryCellEdit(null)}
+                                                />
+                                              )}
                                             </td>
                                           );
                                         })
                                       )}
 
                                       {/* ⏱️ 근무시간 세부 셀 */}
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-amber-700 text-xs text-center">{otHoursSum > 0 ? otHoursSum : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : "-"}</td>
-                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalHoursSum > 0 ? totalHoursSum : "-"}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{workDaysCount > 0 ? workDaysCount : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-slate-700 text-xs text-center">{normalHoursSum > 0 ? normalHoursSum : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-amber-700 text-xs text-center">{otHoursSum > 0 ? otHoursSum : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-white font-bold text-rose-700 text-xs text-center">{holidayHoursSum > 0 ? holidayHoursSum : ""}</td>
+                                      <td className="px-1 py-2 border-r border-[#D6E0EC] bg-[#E2E8F0] font-black text-blue-900 text-xs text-center">{totalHoursSum > 0 ? totalHoursSum : ""}</td>
 
                                       {(salaryViewMode === "all" || salaryViewMode === "partB") && (
                                         <>
